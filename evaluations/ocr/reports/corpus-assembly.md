@@ -1,0 +1,19 @@
+# Ensamblado offline: evidencia revisable, publicación bloqueada
+
+7 documentos, 216 páginas físicas: 179 con texto directo y 2 con evidencia OCR alternativa = 181 con contexto disponible; 35 sin texto. No son 218 páginas. Todo documento/página y el corpus requieren revisión y bloquean publicación; no es entrada apta para indexación automática.
+
+`assemble.py` carga completos los JSON directos y el segundo intento aprobado, fija identidad mediante hashes del corpus-audit/directo/informe y constantes del piloto, verifica los 7 PDF y el fragmento sin Docker. No acepta rutas de corpus/salida por CLI. Rechaza symlinks (también ancestros), identidad/rutas alteradas, hashes discordantes, mapping distinto de 1→13/2→14, páginas/bloques incompletos o duplicados y salida existente. No consulta ni depende de la revisión visual paralela.
+
+Cada registro conserva la página directa íntegra, incluso vacía, como primera evidencia; añade `pages[].markdown` y el objeto de bloques correspondiente como segunda evidencia. Mantiene documento original, raw referenciado por hash, datos OCR completos, metadata, provenance, mapping, bbox, readingOrder y markdownSpan sin recalcular ni reinterpretar offsets. Markdown no es transcripción fiel. Los cuatro issues de pilot-02 (fecha faltante, palabra sustituida, thead y orden de lectura) quedan asociados a páginas 13–14 con informe/hash y sin corrección aplicada.
+
+Creación exclusiva del directorio; `write_json` existente conserva exclusividad/fsync. `manifest.record.json` se escribe completo antes del enlace duro exclusivo y atómico `manifest.json`; ambos son el mismo registro. Un fallo puede dejar reserva/datos parciales, nunca se autoriza borrarlos ni repetir. Solo manifest final válido más exit 0 acredita completitud; no calidad semántica ni garantía frente a mutación hostil concurrente.
+
+## Verificación observada
+- RED: comando enfocado inicialmente exit 1 por módulo ausente; con stub, 8 fallos observados del contrato antes de implementar. GREEN final: 11 pruebas, exit 0. Incluye mapping sin duplicación, preservación exacta, hash, success false, conteo/duplicados, incompletitud, symlink/traversal, no-overwrite y fallo de escritura sin manifest final.
+- `PYTHONDONTWRITEBYTECODE=1 UV_OFFLINE=1 uv run --offline --no-project --python 3.14 python -m unittest discover -s evaluations/ocr/tests -p test_assemble.py` → exit 0, 11 pruebas.
+- `PYTHONDONTWRITEBYTECODE=1 UV_OFFLINE=1 uv run --offline --no-project --python 3.14 python -m unittest discover -s evaluations/ocr/tests` → exit 0, 41 pruebas con mocks; sin Docker/envíos reales. No se modifica código compartido; no corresponde diferencial.
+- `PYTHONDONTWRITEBYTECODE=1 UV_OFFLINE=1 uv run --offline --no-project --python 3.14 python evaluations/ocr/assemble.py` → exit 0, única ejecución real.
+- Validación estructural stdlib posterior: exit 0; 16 entradas conservan hashes antes/después y al releer; conteos y bloqueo de las 216 páginas comprobados. Manifest registra todos los hashes: incluye 7 fuentes, fragmento y artefactos previos. SHA-256 datos finales: `104160c01f34dff520fb67a28d0dd004f6866ccc3a1184704f59861df9dbbc1f`.
+- Generados aparte: `documents.json` 703413 bytes/6040 líneas; dos nombres de manifest, 4827 bytes/52 líneas cada uno. Fuentes directas fijadas: `c1e08273d010bf6e97c22753ffb02c173f043052836346a78de1dd568e3f2e4e`; fragmento `836713cefe6bf36f69832e3c88ac56288e4e238e61343f300ba6fe34814ff71a`; original `3ebfd85b26199382c759240321622a1009b791e16dd895f4f7ea34428da2aa26`.
+
+Límites: no nuevo OCR de las 35 páginas restantes, correcciones, chunks, inferencia de sección/página impresa/vigencia/prevalencia, cambios de producción, red o reconciliación de créditos. Contexto disponible significa evidencia textual, no información fiable ni cobertura validada del corpus.
