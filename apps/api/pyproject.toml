@@ -1,0 +1,33 @@
+[project]
+name = "unitropico-api"
+version = "0.1.0"
+description = "API HTTP de Unitrópico: salud local y composición explícita"
+requires-python = ">=3.14,<3.15"
+dependencies = ["fastapi==0.162.2", "pydantic==2.14.3"]
+
+[dependency-groups]
+dev = [
+    "pytest==9.2.0",
+    "ruff==0.17.4",
+    "workers-py==1.17.9",
+    "workers-runtime-sdk==1.9.6",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py314"
+extend-exclude = [".venv-workers", "python_modules", ".wrangler"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "D"]
+# La arquitectura pide docstrings de módulo solo cuando aporten contexto.
+ignore = ["D100", "D104"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
