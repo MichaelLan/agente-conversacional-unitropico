@@ -1,0 +1,66 @@
+# Datos locales privados: conservar en disco, nunca incorporarlos al repositorio.
+.env
+.env.*
+.dev.vars
+.dev.vars.*
+# Las plantillas existentes requieren auditoría de placeholders antes de versionarse.
+!.env.example
+!.env.*.example
+!.dev.vars.example
+!.dev.vars.*.example
+.npmrc
+.pypirc
+.netrc
+.git-credentials
+.credentials
+.credentials/
+*.key
+*.pem
+*.p12
+*.pfx
+*.jks
+*.keystore
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519.*
+service-account.json
+service-account-*.json
+service_account.json
+service_account_*.json
+application_default_credentials.json
+client_secret*.json
+
+# Estado y configuración local de memoria: conservarlos solo en esta máquina.
+/.engram/
+/TRASPASO_SESION.md
+/TRASPASO_SESION.md.*
+
+# Corpus local: puede contener firmas y datos personales en cualquier formato.
+# Los reportes de metadatos y SHA permanecen versionables fuera de documents/.
+/documents/
+
+# Resultados derivados, entornos y SDK generado (no fuentes ni lockfiles).
+.artifacts/
+.venv*/
+venv*/
+python_modules/
+.wrangler/
+node_modules/
+dist/
+build/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.cache/
+.coverage
+htmlcov/
+coverage/
+*.egg-info/
+*.log
+.DS_Store
+*.tmp
+*.temp
+*~
