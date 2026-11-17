@@ -1,0 +1,8 @@
+{
+  "name": "unitropico-api-local",
+  "main": "src/worker.py",
+  "compatibility_date": "2026-11-08",
+  "compatibility_flags": ["python_workers"],
+  "workers_dev": false,
+  "services": [{"binding": "RAG", "service": "unitropico-rag-poc"}]
+}
