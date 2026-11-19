@@ -10,6 +10,8 @@
 --   * Hashes are 64 lowercase hex characters (sha256).
 --   * A version is published only when reviewed, extracted, chunked and with valid page ranges.
 --   * Chunks of a published version are immutable (unpublish first).
+--   * A version with corrections not yet applied by the ingestion
+--     (corrections_dirty = 1) cannot be published.
 --   * Upload order never implies validity: effective_from/effective_until and
 --     supersedes_version_id are manual administrator metadata.
 
@@ -52,6 +54,12 @@ CREATE TABLE document_versions (
     processing_attempts   INTEGER NOT NULL DEFAULT 0 CHECK (processing_attempts >= 0),
     chunker_version       TEXT CHECK (chunker_version IS NULL OR length(trim(chunker_version)) > 0),
     extraction_r2_key     TEXT UNIQUE CHECK (extraction_r2_key IS NULL OR length(trim(extraction_r2_key)) > 0),
+    -- Pending OCR corrections. Every create or logical delete of a text_correction
+    -- sets corrections_dirty = 1 and increments corrections_rev (triggers below).
+    -- Only the ingestion chunk step clears the flag, and only when the revision it
+    -- read together with the corrections is still current (compare-and-set).
+    corrections_dirty     INTEGER NOT NULL DEFAULT 0 CHECK (corrections_dirty IN (0, 1)),
+    corrections_rev       INTEGER NOT NULL DEFAULT 0 CHECK (corrections_rev >= 0),
     created_at            TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     updated_at            TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     published_at          TEXT,
@@ -70,6 +78,7 @@ CREATE TABLE document_versions (
         AND extraction_r2_key IS NOT NULL
         AND chunker_version IS NOT NULL
         AND error_code IS NULL
+        AND corrections_dirty = 0
     ))
 ) STRICT;
 
@@ -107,6 +116,8 @@ BEGIN
     WHERE NOT EXISTS (SELECT 1 FROM chunks WHERE version_id = NEW.id);
     SELECT RAISE(ABORT, 'chunk_page_out_of_range')
     WHERE EXISTS (SELECT 1 FROM chunks WHERE version_id = NEW.id AND page_end > NEW.page_count);
+    SELECT RAISE(ABORT, 'corrections_pending')
+    WHERE NEW.corrections_dirty <> 0;
 END;
 
 -- Identity and provenance of a published version cannot change in place.
@@ -284,7 +295,15 @@ CREATE TABLE text_corrections (
     CHECK (deleted_at IS NULL OR deleted_at >= created_at)
 ) STRICT;
 
-CREATE INDEX text_corrections_version ON text_corrections (version_id, created_at, id);
+-- Order is created_at, then rowid (insertion order): ids are random uuid4, so
+-- they must never break ties. The rowid is implicit in every index entry.
+CREATE INDEX text_corrections_version ON text_corrections (version_id, created_at);
+
+-- One active correction per (version, page, find_text): a duplicate could never
+-- match exactly once. Logically deleted rows do not block a new one.
+CREATE UNIQUE INDEX text_corrections_active_unique
+    ON text_corrections (version_id, page_number, find_text)
+    WHERE deleted_at IS NULL;
 
 -- A published version is immutable: unpublish before adding or removing corrections.
 CREATE TRIGGER text_corrections_guard_insert
@@ -323,6 +342,25 @@ BEFORE UPDATE OF deleted_at ON text_corrections
 WHEN (SELECT status FROM document_versions WHERE id = OLD.version_id) = 'published'
 BEGIN
     SELECT RAISE(ABORT, 'published_version_immutable');
+END;
+
+-- Creating or logically deleting a correction leaves the chunks stale until the
+-- ingestion applies the new set: mark the version dirty and bump its revision.
+CREATE TRIGGER text_corrections_dirty_insert
+AFTER INSERT ON text_corrections
+BEGIN
+    UPDATE document_versions
+    SET corrections_dirty = 1, corrections_rev = corrections_rev + 1
+    WHERE id = NEW.version_id;
+END;
+
+CREATE TRIGGER text_corrections_dirty_delete
+AFTER UPDATE OF deleted_at ON text_corrections
+WHEN OLD.deleted_at IS NULL AND NEW.deleted_at IS NOT NULL
+BEGIN
+    UPDATE document_versions
+    SET corrections_dirty = 1, corrections_rev = corrections_rev + 1
+    WHERE id = NEW.version_id;
 END;
 
 CREATE TRIGGER text_corrections_no_delete

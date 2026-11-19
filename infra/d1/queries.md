@@ -83,10 +83,13 @@ Página de chunks de una versión para que el administrador revise el texto extr
 
 ### 2.5 Correcciones de texto (`text_corrections`)
 
-- `corrections_by_version`: todas (activas y borradas lógicamente), por `created_at, id`. Lo usa la API.
-- `active_corrections_by_version`: las que aplica la ingesta en el paso `chunk`, **en este orden** (la ingesta guarda una copia literal y un test comprueba que coincide). Usa el índice `text_corrections_version`.
-- `insert_correction`: los triggers rechazan versiones `published` y páginas por encima de un `page_count` conocido.
+- `corrections_by_version`: todas (activas y borradas lógicamente), por `created_at, rowid`. Lo usa la API. El desempate es el `rowid` (orden de inserción), nunca el `id` (uuid4 aleatorio: el orden dejaría de ser determinista).
+- `active_corrections_by_version`: las que aplica la ingesta en el paso `chunk`, **en este orden** (`created_at, rowid`; la ingesta guarda una copia literal y un test comprueba que coincide). Usa el índice `text_corrections_version (version_id, created_at)`, cuyas entradas incluyen el `rowid`.
+- `corrections_rev_by_version`: revisión del conjunto de correcciones. La ingesta la lee **en el mismo batch** que `active_corrections_by_version` (una sola instantánea).
+- `clear_corrections_dirty`: compare-and-set; pone `corrections_dirty = 0` solo si `corrections_rev` sigue siendo el leído y la versión está en `extracted`. La ingesta la ejecuta en el último batch de `replace_chunks`, de forma atómica con la escritura de los chunks.
+- `insert_correction`: los triggers rechazan versiones `published` y páginas por encima de un `page_count` conocido. El conteo de activas (< 100) va en la misma sentencia (`INSERT … SELECT … WHERE`), así que dos peticiones concurrentes no superan el tope; `RETURNING id` vacío = tope alcanzado. Un duplicado activo (misma versión, página y `find_text`) falla con `UNIQUE constraint failed` (índice parcial `text_corrections_active_unique … WHERE deleted_at IS NULL`).
 - `soft_delete_correction`: fija `deleted_at` con el reloj de la base (así `deleted_at >= created_at`) solo si estaba activa; `RETURNING id` vacío = ya borrada o de otra versión. Las filas nunca se borran físicamente.
+- **Correcciones pendientes.** Los triggers `text_corrections_dirty_insert` y `text_corrections_dirty_delete` ponen `document_versions.corrections_dirty = 1` e incrementan `corrections_rev` en cada alta o borrado lógico, dentro de la misma transacción. Solo el paso `chunk` de la ingesta limpia la marca (`clear_corrections_dirty`). Mientras valga 1, la versión no puede publicarse: el trigger `document_versions_publish_guard` aborta con `corrections_pending`, y además lo impide el `CHECK` de `published`. La API también rechaza con 409 `corrections_pending` marcarla como revisada.
 
 ### 2.6 `published_versions_in_force`
 

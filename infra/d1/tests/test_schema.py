@@ -832,6 +832,8 @@ class TextCorrectionTests(SchemaTestCase):
         self.insert()
         self.add_chunk("c1", "texto")
         self.to_ready("ver-1")
+        # The ingestion chunk step applied the correction (see clear_corrections_dirty).
+        self.db.execute("UPDATE document_versions SET corrections_dirty = 0")
         self.publish("ver-1")
         with self.assertRaisesRegex(sqlite3.IntegrityError, "immutable"):
             self.insert("cor-2", page=2)
@@ -841,17 +843,111 @@ class TextCorrectionTests(SchemaTestCase):
         self.db.execute(QUERIES["soft_delete_correction"], ("cor-1", "ver-1"))
         self.assertEqual(self.active(), [])
 
-    def test_active_order_is_creation_then_id(self) -> None:
-        self.insert("cor-b", page=1, find="b", replace="B")
-        self.insert("cor-a", page=1, find="a", replace="A")
+    def test_active_order_is_creation_then_insertion(self) -> None:
+        same = "2030-01-01T00:00:00.000Z"
+        for cid, find in (("cor-z", "z"), ("cor-b", "b"), ("cor-a", "a")):
+            self.db.execute(
+                "INSERT INTO text_corrections (id, version_id, page_number, find_text,"
+                " replace_text, reason, created_at) VALUES (?, 'ver-1', 1, ?, 'X',"
+                " 'r', ?)",
+                (cid, find, same),
+            )
         self.db.execute(
             "INSERT INTO text_corrections (id, version_id, page_number, find_text,"
             " replace_text, reason, created_at) VALUES"
             " ('cor-0', 'ver-1', 1, 'c', 'C', 'r', '2000-01-01T00:00:00.000Z')"
         )
-        ordered = self.active()
-        self.assertEqual(ordered[0], "cor-0")
-        self.assertEqual(sorted(ordered[1:]), ["cor-a", "cor-b"])
+        # Ties on created_at follow insertion order (rowid), not the id.
+        self.assertEqual(self.active(), ["cor-0", "cor-z", "cor-b", "cor-a"])
+        rows = self.db.execute(QUERIES["corrections_by_version"], ("ver-1",))
+        self.assertEqual([r["id"] for r in rows], ["cor-0", "cor-z", "cor-b", "cor-a"])
+
+    def test_insert_returns_id_and_is_capped_at_100_active(self) -> None:
+        for n in range(99):
+            self.insert(f"cor-{n}", page=1, find=f"texto {n}")
+        self.insert("cor-del", page=1, find="borrada")
+        self.db.execute(QUERIES["soft_delete_correction"], ("cor-del", "ver-1"))
+        returned = self.db.execute(
+            QUERIES["insert_correction"],
+            ("cor-99", "ver-1", 1, "texto 99", "x", "r"),
+        ).fetchall()
+        self.assertEqual([r["id"] for r in returned], ["cor-99"])
+        refused = self.db.execute(
+            QUERIES["insert_correction"],
+            ("cor-100", "ver-1", 1, "texto 100", "x", "r"),
+        ).fetchall()
+        self.assertEqual(refused, [])
+        self.assertEqual(len(self.active()), 100)
+
+    def test_active_duplicate_rejected_deleted_does_not_block(self) -> None:
+        self.insert()
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "UNIQUE"):
+            self.insert("cor-2", replace="otra cosa")
+        self.insert("cor-3", page=17)  # other page
+        self.db.execute(QUERIES["soft_delete_correction"], ("cor-1", "ver-1"))
+        self.insert("cor-4")
+        self.assertEqual(self.active(), ["cor-3", "cor-4"])
+
+    def dirty(self) -> tuple[int, int]:
+        row = self.db.execute(
+            "SELECT corrections_dirty, corrections_rev FROM document_versions"
+            " WHERE id = 'ver-1'"
+        ).fetchone()
+        return row[0], row[1]
+
+    def test_create_and_delete_mark_dirty_and_bump_revision(self) -> None:
+        self.assertEqual(self.dirty(), (0, 0))
+        self.insert()
+        self.assertEqual(self.dirty(), (1, 1))
+        self.db.execute("UPDATE document_versions SET corrections_dirty = 0")
+        self.db.execute(QUERIES["soft_delete_correction"], ("cor-1", "ver-1"))
+        self.assertEqual(self.dirty(), (1, 2))
+        # A no-op soft delete (already deleted) changes nothing.
+        self.db.execute("UPDATE document_versions SET corrections_dirty = 0")
+        self.db.execute(QUERIES["soft_delete_correction"], ("cor-1", "ver-1"))
+        self.assertEqual(self.dirty(), (0, 2))
+        # A refused insert (cap or trigger) rolls back the bump too.
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.insert("cor-2", page=99)
+        self.assertEqual(self.dirty(), (0, 2))
+
+    def test_clear_dirty_is_compare_and_set_on_revision(self) -> None:
+        self.insert()
+        for status in ("processing", "extracted"):
+            self.set_status("ver-1", status)
+        (rev,) = self.db.execute(
+            QUERIES["corrections_rev_by_version"], ("ver-1",)
+        ).fetchone()
+        self.insert("cor-2", page=2)  # created after the chunk step read
+        self.db.execute(QUERIES["clear_corrections_dirty"], ("ver-1", rev))
+        self.assertEqual(self.dirty(), (1, 2))
+        self.db.execute(QUERIES["clear_corrections_dirty"], ("ver-1", 2))
+        self.assertEqual(self.dirty(), (0, 2))
+
+    def test_clear_dirty_only_while_extracted(self) -> None:
+        self.insert()
+        self.db.execute(QUERIES["clear_corrections_dirty"], ("ver-1", 1))
+        self.assertEqual(self.dirty(), (1, 1))
+
+    def test_dirty_version_cannot_be_published(self) -> None:
+        self.add_chunk("c1", "texto")
+        self.insert()
+        self.to_ready("ver-1")
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "corrections_pending"):
+            self.publish("ver-1")
+        self.db.execute("UPDATE document_versions SET corrections_dirty = 0")
+        self.publish("ver-1")
+        self.set_status("ver-1", "unpublished")
+        self.db.execute(QUERIES["soft_delete_correction"], ("cor-1", "ver-1"))
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "corrections_pending"):
+            self.set_status("ver-1", "published")
+
+    def test_published_check_requires_clean_corrections(self) -> None:
+        self.add_chunk("c1", "texto")
+        self.to_ready("ver-1")
+        self.publish("ver-1")
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.db.execute("UPDATE document_versions SET corrections_dirty = 1")
 
     def test_correct_event_step_allowed(self) -> None:
         self.db.execute(

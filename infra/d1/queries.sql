@@ -108,24 +108,46 @@ SELECT count(*) AS total FROM chunks WHERE version_id = ?1;
 
 -- name: corrections_by_version
 -- ?1 = version id. Every correction (active and logically deleted), oldest first.
+-- Ties on created_at are broken by rowid (insertion order), never by the random id.
 SELECT id, version_id, page_number, find_text, replace_text, reason,
        created_at, deleted_at
 FROM text_corrections
 WHERE version_id = ?1
-ORDER BY created_at, id;
+ORDER BY created_at, rowid;
 
 -- name: active_corrections_by_version
 -- ?1 = version id. Corrections the ingestion chunk step applies, in this order.
+-- Read in the same D1 batch as corrections_rev_by_version (one snapshot).
 SELECT id, page_number, find_text, replace_text
 FROM text_corrections
 WHERE version_id = ?1 AND deleted_at IS NULL
-ORDER BY created_at, id;
+ORDER BY created_at, rowid;
+
+-- name: corrections_rev_by_version
+-- ?1 = version id. Revision of the correction set (bumped by every create or
+-- logical delete). The ingestion chunk step reads it with the corrections and
+-- passes it back to clear_corrections_dirty.
+SELECT corrections_rev FROM document_versions WHERE id = ?1;
+
+-- name: clear_corrections_dirty
+-- ?1 = version id, ?2 = corrections_rev read with the applied corrections.
+-- Compare-and-set: a correction created or deleted after that read bumped the
+-- revision, so the flag stays set and the version cannot be published.
+UPDATE document_versions SET corrections_dirty = 0
+WHERE id = ?1 AND corrections_rev = ?2 AND status = 'extracted';
 
 -- name: insert_correction
 -- ?1 id, ?2 version_id, ?3 page_number, ?4 find_text, ?5 replace_text, ?6 reason.
 -- Triggers refuse published versions and pages beyond a known page_count.
+-- Inserts nothing (RETURNING no row) when the version already has 100 active
+-- corrections: count and insert are one statement, so concurrent requests
+-- cannot exceed the cap. An active duplicate (same page and find_text) fails
+-- with UNIQUE constraint failed (index text_corrections_active_unique).
 INSERT INTO text_corrections (id, version_id, page_number, find_text, replace_text, reason)
-VALUES (?1, ?2, ?3, ?4, ?5, ?6);
+SELECT ?1, ?2, ?3, ?4, ?5, ?6
+WHERE (SELECT count(*) FROM text_corrections
+       WHERE version_id = ?2 AND deleted_at IS NULL) < 100
+RETURNING id;
 
 -- name: soft_delete_correction
 -- ?1 correction id, ?2 version id. Logical delete, only once (database clock,
