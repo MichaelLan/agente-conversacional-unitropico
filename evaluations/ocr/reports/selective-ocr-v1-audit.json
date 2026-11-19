@@ -1,0 +1,3635 @@
+{
+ "schema": "selective-ocr-v1-audit/v1",
+ "date": "2026-11-19",
+ "scope": "Lotes completos 01-res-cbu-002-2025 (16), 02-documento-tecnico (17), 03-manual-m-ip-36-1of2 (12) = 45 páginas. Lote 04 (incierto) y 05–07 (sin enviar) excluidos.",
+ "inputs": {
+  "manifest": "evaluations/ocr/.artifacts/selective-ocr-v1/manifest.json",
+  "responses": "evaluations/ocr/.artifacts/selective-ocr-v1/execution/<lote>/response.raw (data.pages[].markdown, mapeado a página física vía manifest.lots[].mapping)",
+  "previous_audit": "evaluations/ocr/reports/extraction-quality-audit.json"
+ },
+ "method": "Render local 150 dpi (PyMuPDF) de la página física del PDF original y comparación visual contra el markdown nuevo completo; zoom 200–400 dpi en tablas, gráficos, cifras, fechas, URL y texto desvaído. Misma rúbrica que la auditoría previa; además se marca como defecto toda autocorrección de erratas del original. Revisión en 4 bloques paralelos con brief común y verificación cruzada del coordinador (p.ej. 01 p5, 01 p12, 02 p18, 02 p20, 02 p21, 02 p46). Sin red, sin Firecrawl, sin .env.",
+ "rubric": {
+  "ok": "contenido sustantivo completo y fiel",
+  "minor": "solo diferencias no sustantivas",
+  "defect": "falta o cambia contenido sustantivo (incluye autocorrección de erratas del original)",
+  "missing": "sin texto"
+ },
+ "recommendations": {
+  "use_new": "sirve al 100 % tal cual",
+  "use_new_with_corrections": "sirve tras aplicar las correcciones literales listadas (find_text aparece exactamente una vez en el markdown de la página)",
+  "manual_review": "no se garantiza con correcciones puntuales"
+ },
+ "correction_fields": {
+  "kind": "substantive | cosmetic (formato, no cambia palabras) | editorial (añade rótulos no presentes como texto en esa posición)",
+  "literal": "false si el reemplazo no es transcripción literal",
+  "confidence": "high | medium",
+  "optional": "true si es alternativa opcional"
+ },
+ "totals": {
+  "pages": 45,
+  "new_classification": {
+   "defect": 31,
+   "ok": 5,
+   "minor": 9
+  },
+  "recommendation": {
+   "use_new_with_corrections": 32,
+   "manual_review": 3,
+   "use_new": 10
+  },
+  "prev_defects_fixed": {
+   "yes": 27,
+   "partial": 15,
+   "no": 3
+  },
+  "by_lot": {
+   "01-res-cbu-002-2025": {
+    "defect": 15,
+    "use_new_with_corrections": 14,
+    "manual_review": 1,
+    "ok": 1,
+    "use_new": 1
+   },
+   "02-documento-tecnico": {
+    "minor": 4,
+    "use_new_with_corrections": 12,
+    "defect": 12,
+    "manual_review": 2,
+    "ok": 1,
+    "use_new": 3
+   },
+   "03-manual-m-ip-36-1of2": {
+    "minor": 5,
+    "use_new_with_corrections": 6,
+    "ok": 3,
+    "use_new": 6,
+    "defect": 4
+   }
+  },
+  "corrections": 118,
+  "corrections_by_kind": {
+   "substantive": 109,
+   "cosmetic": 6,
+   "editorial": 3
+  },
+  "literal_patch_pages_vs_reusable": {
+   "02-documento-tecnico p5": "new_better",
+   "02-documento-tecnico p45": "new_better",
+   "02-documento-tecnico p57": "equivalent",
+   "02-documento-tecnico p58": "old_better",
+   "02-documento-tecnico p59": "equivalent",
+   "02-documento-tecnico p61": "equivalent",
+   "03-manual-m-ip-36-1of2 p18": "new_better"
+  }
+ },
+ "pages": [
+  {
+   "lot": "01-res-cbu-002-2025",
+   "physical_page": 1,
+   "kind": "firecrawl_ocr",
+   "prev_classification": "defect",
+   "new_classification": "defect",
+   "prev_defects_fixed": "yes",
+   "prev_defects_detail": "Corregidas todas las pérdidas de tildes y sustituciones (Comité, Internacional, está, Constitución Política, lo referente).",
+   "new_defects": [
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: Acuerdo CS No. 069 / new: Açuerdo CS No. 069 (mota de escaneo leída como cedilla)"
+    }
+   ],
+   "minor_notes": "Faltan logo/membrete y pie de página institucional (no sustantivo). Typos originales 'por las Ley 30' y 'al su propio bienestar' conservados.",
+   "recommendation": "use_new_with_corrections",
+   "corrections": [
+    {
+     "find_text": "Açuerdo CS No. 069",
+     "replace_text": "Acuerdo CS No. 069",
+     "reason": "cedilla espuria; el original dice Acuerdo",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    }
+   ],
+   "vs_reusable": null,
+   "zoom_used": true,
+   "notes": "Todas las cifras verificadas (Ley 1937/2018, Ordenanza 014/2021, art. 69, Ley 489/1998, Ley 30/1992, Ley 1740/2014, Acuerdo 03/1995, Decreto 1295/2010, art. 6° num. 6.6).",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "fragment_page": 1
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "physical_page": 2,
+   "kind": "firecrawl_ocr",
+   "prev_classification": "defect",
+   "new_classification": "defect",
+   "prev_defects_fixed": "yes",
+   "prev_defects_detail": "Corregidas Resolución Rectoral, subsidios, académica, Fomento y demás sustituciones ó->b, é->d.",
+   "new_defects": [
+    {
+     "type": "autocorrection",
+     "detail": "img: graduación de los estudiante. / new: graduación de los estudiantes."
+    },
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: beneficios, estímulos, incentivos / new: beneficios, estimulos, incentivos"
+    }
+   ],
+   "minor_notes": "Separación de párrafo añadida antes de 'Que el Consejo Superior' (en el original va pegado). Membrete y pie omitidos.",
+   "recommendation": "use_new_with_corrections",
+   "corrections": [
+    {
+     "find_text": "graduación de los estudiantes.",
+     "replace_text": "graduación de los estudiante.",
+     "reason": "el original tiene el typo 'estudiante' (singular)",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "beneficios, estimulos, incentivos",
+     "replace_text": "beneficios, estímulos, incentivos",
+     "reason": "tilde presente en el original",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    }
+   ],
+   "vs_reusable": null,
+   "zoom_used": true,
+   "notes": "Cifras correctas: Decreto 1330 del 25 julio 2019, Art. 2.5.3.2.3.1.6, Ley 1697/2013 art. 4°, Acuerdos CS 014/2022, 044/2023, 069/2024, Res. 020/2021.",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "fragment_page": 2
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "physical_page": 3,
+   "kind": "firecrawl_ocr",
+   "prev_classification": "defect",
+   "new_classification": "defect",
+   "prev_defects_fixed": "partial",
+   "prev_defects_detail": "Años y números ahora correctos (Res. SG 004 de 2024, 2024–2028, 2026-A, 27 octubre 2025, E3M38, Res. 020/2021, 'Rectoral'). Persisten muchos errores de palabra por escaneo desvaído.",
+   "new_defects": [
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: regulado por la Resolución (l desvaída) / new: regulado por a Resolución"
+    },
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: entendiéndose como aquellos / new: entendírcose como acuellos"
+    },
+    {
+     "type": "omission",
+     "detail": "img: carácter general o particular / new: carácter genera o particular"
+    },
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: alineado ... en el eje / new: alineaco ... er el eje"
+    },
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: Bienestar y Permanencia / new: Bienestary Permanencia"
+    },
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: bienestar estudiantil / new: bienestar estudiante"
+    },
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: periodo académico 2025-2 / new: perico académico 2025-2"
+    },
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: Alimentación del Programa / new: Alimentación de Programa"
+    },
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: para el conocimiento / new: para el concimiento"
+    },
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: Unitrópico (x3) / new: Unitrófico (x3)"
+    },
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: presente acto ... descrito ... disposiciones / new: acte ... descrrito ... discosiciones"
+    },
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: se harán efectivos / new: se naran efectivos"
+    }
+   ],
+   "minor_notes": "Encabezado '# Unitrópico' del logo; comillas simples en 'Bien-Estar Contigo'; posible coma faltante tras 'inducción'. Typos originales 'acto administrativa' y 'dia' conservados.",
+   "recommendation": "manual_review",
+   "corrections": [
+    {
+     "find_text": "regulado por a Resolución",
+     "replace_text": "regulado por la Resolución",
+     "reason": "'l' desvaída en el escaneo; lectura más probable",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "medium"
+    },
+    {
+     "find_text": "entendírcose como acuellos",
+     "replace_text": "entendiéndose como aquellos",
+     "reason": "error OCR",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "carácter genera o particular",
+     "replace_text": "carácter general o particular",
+     "reason": "error OCR",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "alineaco con los",
+     "replace_text": "alineado con los",
+     "reason": "error OCR",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "2024–2028, er el eje",
+     "replace_text": "2024–2028, en el eje",
+     "reason": "error OCR",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "Bienestary Permanencia",
+     "replace_text": "Bienestar y Permanencia",
+     "reason": "palabras fusionadas",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "el bienestar estudiante,",
+     "replace_text": "el bienestar estudiantil,",
+     "reason": "error OCR",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "al perico académico",
+     "replace_text": "al periodo académico",
+     "reason": "error OCR",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "Alimentación de Programa",
+     "replace_text": "Alimentación del Programa",
+     "reason": "error OCR",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "para el concimiento",
+     "replace_text": "para el conocimiento",
+     "reason": "error OCR",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "estudiantes de Unitrófico.",
+     "replace_text": "estudiantes de Unitrópico.",
+     "reason": "error OCR",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "Americano, Unitrófico, en mérito",
+     "replace_text": "Americano, Unitrópico, en mérito",
+     "reason": "error OCR",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "Americano Unitrófico de conformidad",
+     "replace_text": "Americano Unitrópico de conformidad",
+     "reason": "error OCR",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "El presente acte tiene",
+     "replace_text": "El presente acto tiene",
+     "reason": "error OCR",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "Alimentación descrrito en",
+     "replace_text": "Alimentación descrito en",
+     "reason": "error OCR",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "con las discosiciones del",
+     "replace_text": "con las disposiciones del",
+     "reason": "error OCR",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "se naran efectivos",
+     "replace_text": "se harán efectivos",
+     "reason": "error OCR",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    }
+   ],
+   "vs_reusable": null,
+   "zoom_used": true,
+   "notes": "Página desvaída. Cifras todas correctas, pero ~17 errores de palabra; se adjunta lista completa de correcciones verificadas a zoom (aplicándolas la página quedaría fiel). 'por a' es la única dudosa.",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "fragment_page": 3
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "physical_page": 4,
+   "kind": "firecrawl_ocr",
+   "prev_classification": "defect",
+   "new_classification": "defect",
+   "prev_defects_fixed": "yes",
+   "prev_defects_detail": "Corregidas está, Internacional, individuales, PARÁGRAFO 1, parágrafo único.",
+   "new_defects": [
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: busca reconocer la identidad / new: busca reconcer la identidad"
+    },
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: reconociéndolos como titulares / new: reconociendolos como titulares"
+    },
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: posibilitando así, la adecuada / new: posibilito así, la adecuada"
+    }
+   ],
+   "minor_notes": "Membrete y pie omitidos. 'perdida' sin tilde es del original y se conserva.",
+   "recommendation": "use_new_with_corrections",
+   "corrections": [
+    {
+     "find_text": "busca reconcer la",
+     "replace_text": "busca reconocer la",
+     "reason": "error OCR",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "reconociendolos como",
+     "replace_text": "reconociéndolos como",
+     "reason": "tilde del original",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "posibilito así,",
+     "replace_text": "posibilitando así,",
+     "reason": "error OCR",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    }
+   ],
+   "vs_reusable": null,
+   "zoom_used": true,
+   "notes": "Referencias a artículos y Acuerdo CS 069/2024 correctas.",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "fragment_page": 4
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "physical_page": 5,
+   "kind": "firecrawl_ocr",
+   "prev_classification": "defect",
+   "new_classification": "defect",
+   "prev_defects_fixed": "yes",
+   "prev_defects_detail": "Corregidas carné, requisitos, completo, Postulación, etc.",
+   "new_defects": [
+    {
+     "type": "autocorrection",
+     "detail": "img: el periodo académico cursado / new: el período académico cursado"
+    },
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: deberá adjuntarse (j dañada) / new: deberá aduntarse"
+    }
+   ],
+   "minor_notes": "Membrete y pie omitidos; negrita/cursivas perdidas en el título del formulario (comillas rectas). 'Apcyo' figura así en la imagen (escaneo) y se deja.",
+   "recommendation": "use_new_with_corrections",
+   "corrections": [
+    {
+     "find_text": "el período académico cursado",
+     "replace_text": "el periodo académico cursado",
+     "reason": "el original escribe 'periodo' sin tilde",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "deberá aduntarse",
+     "replace_text": "deberá adjuntarse",
+     "reason": "la j está dañada en el escaneo pero existe",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    }
+   ],
+   "vs_reusable": null,
+   "zoom_used": true,
+   "notes": "Cifras correctas: once (11) créditos, (2) dos asignaturas, 3.2, 2025-B/2025-A, artículo 10, 2025-2.",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "fragment_page": 5
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "physical_page": 6,
+   "kind": "firecrawl_ocr",
+   "prev_classification": "defect",
+   "new_classification": "defect",
+   "prev_defects_fixed": "yes",
+   "prev_defects_detail": "Corregidas Educación Nacional, requisito, Sisbén, realizará; viñetas unidas a sus ítems.",
+   "new_defects": [
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: dentro de las líneas de acción / new: dentro de las lineas de acción"
+    }
+   ],
+   "minor_notes": "Viñetas ➢ como ►; membrete y pie omitidos. 'excepciones', 'pueblo Room', 'victima' son del original y se conservan.",
+   "recommendation": "use_new_with_corrections",
+   "corrections": [
+    {
+     "find_text": "dentro de las lineas de acción",
+     "replace_text": "dentro de las líneas de acción",
+     "reason": "tilde del original",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    }
+   ],
+   "vs_reusable": null,
+   "zoom_used": true,
+   "notes": "Grupos Sisbén A1-A5, B1-B7, C1-C18, cuatro (4), Ley 1448 de 2021 correctos.",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "fragment_page": 6
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "physical_page": 7,
+   "kind": "firecrawl_ocr",
+   "prev_classification": "defect",
+   "new_classification": "defect",
+   "prev_defects_fixed": "yes",
+   "prev_defects_detail": "Corregidas tildes (están, activo, tal, días hábiles); numeración 1-7 del Art. 6 ya unida a su texto.",
+   "new_defects": [
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: discrepancias, falsedad o adulteración (x2) / new: falsidad (x2)"
+    },
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: completa y verificable / new: completa y verifiable"
+    },
+    {
+     "type": "autocorrection",
+     "detail": "img: durante el periodo académico / new: durante el período académico"
+    }
+   ],
+   "minor_notes": "'# Unitrópico' del logo; en ítem 2 el original no cierra comillas ('Contigo.') y new añade comilla de cierre (menor). Pie omitido.",
+   "recommendation": "use_new_with_corrections",
+   "corrections": [
+    {
+     "find_text": "discrepancias, falsidad o adulteración entre",
+     "replace_text": "discrepancias, falsedad o adulteración entre",
+     "reason": "error OCR",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "discrepancias, falsidad o adulteración en la",
+     "replace_text": "discrepancias, falsedad o adulteración en la",
+     "reason": "error OCR",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "completa y verifiable",
+     "replace_text": "completa y verificable",
+     "reason": "error OCR",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "durante el período académico",
+     "replace_text": "durante el periodo académico",
+     "reason": "el original escribe 'periodo' sin tilde",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    }
+   ],
+   "vs_reusable": null,
+   "zoom_used": true,
+   "notes": "cuatro (4) actividades correcto.",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "fragment_page": 7
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "physical_page": 8,
+   "kind": "firecrawl_ocr",
+   "prev_classification": "defect",
+   "new_classification": "defect",
+   "prev_defects_fixed": "yes",
+   "prev_defects_detail": "Corregidas generará la pérdida, del Apoyo; numeración de Art. 7 y Art. 8 unida al texto. 'SOCIECONOMICO' figura así en el original (el ejemplo del audit previo era erróneo) y new lo conserva.",
+   "new_defects": [
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: orientan la Política Integral / new: orientan la Politica Integral"
+    },
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: Hayan incurrido en / new: Hayan incurido en"
+    }
+   ],
+   "minor_notes": "Título del Art. 8 y su primer párrafo marcados como encabezado '##' (formato). Membrete y pie omitidos.",
+   "recommendation": "use_new_with_corrections",
+   "corrections": [
+    {
+     "find_text": "orientan la Politica Integral",
+     "replace_text": "orientan la Política Integral",
+     "reason": "tilde del original",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "Hayan incurido en",
+     "replace_text": "Hayan incurrido en",
+     "reason": "error OCR",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    }
+   ],
+   "vs_reusable": null,
+   "zoom_used": true,
+   "notes": "Sin cifras clave; contenido completo y en orden.",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "fragment_page": 8
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "physical_page": 9,
+   "kind": "firecrawl_ocr",
+   "prev_classification": "defect",
+   "new_classification": "defect",
+   "prev_defects_fixed": "yes",
+   "prev_defects_detail": "Corregidos: 'grado o haber', 'créditos', 'reporte'; tabla Grupo A/B con 10 y 8 puntos bien emparejada; numeración 5-12 correcta.",
+   "new_defects": [
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: La decisión de suspensión será / new: La decisión de suspension será"
+    },
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: La suspensión no implicará / new: La suspENSION no implicará"
+    }
+   ],
+   "minor_notes": "Encabezado logo duplicado ('Unitrópico' y '# Unitrópico') y subtítulo 'Tropico' sin tilde en encabezado; negritas perdidas; tabla OK.",
+   "recommendation": "use_new_with_corrections",
+   "corrections": [
+    {
+     "find_text": "decisión de suspension será",
+     "replace_text": "decisión de suspensión será",
+     "reason": "tilde perdida",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "La suspENSION no implicará",
+     "replace_text": "La suspensión no implicará",
+     "reason": "OCR mayúsculas/tilde erróneas",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    }
+   ],
+   "vs_reusable": null,
+   "zoom_used": true,
+   "notes": "11 créditos, artículo 6, A1-A5, B1-B7, C1-C18, 10/8 puntos verificados.",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "fragment_page": 9
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "physical_page": 10,
+   "kind": "firecrawl_ocr",
+   "prev_classification": "defect",
+   "new_classification": "defect",
+   "prev_defects_fixed": "yes",
+   "prev_defects_detail": "Corregidos: montos con punto ($569.400, $142.350, $284.700.000), 'Resolución Rectoral', tablas de puntos emparejadas (6,5,5,3).",
+   "new_defects": [
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: grupos priorizados determinados / new: grupos prioritizados determinados"
+    }
+   ],
+   "minor_notes": "Sin encabezado de logo; '## 2. SEGUNDO NIVEL' como heading; negritas perdidas. Se conserva fiel 'pueblo Room' y 'estudiante. conforme' del original.",
+   "recommendation": "use_new_with_corrections",
+   "corrections": [
+    {
+     "find_text": "grupos prioritizados determinados",
+     "replace_text": "grupos priorizados determinados",
+     "reason": "palabra alterada por OCR",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    }
+   ],
+   "vs_reusable": null,
+   "zoom_used": true,
+   "notes": "Montos, 4 meses, 16 semanas, 500 cupos, artículo 5 verificados con zoom.",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "fragment_page": 10
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "physical_page": 11,
+   "kind": "firecrawl_ocr",
+   "prev_classification": "defect",
+   "new_classification": "ok",
+   "prev_defects_fixed": "yes",
+   "prev_defects_detail": "Corregidos todos los errores OCR ('salarios mínimos mensuales legales', 'tendrá', 'será', 'Resolución Rectoral').",
+   "new_defects": [],
+   "minor_notes": "Sin encabezado de logo; negritas perdidas; comillas curvas conservadas. Se preservan literales del original ('dar conocer', 'los Apoyo').",
+   "recommendation": "use_new",
+   "corrections": [],
+   "vs_reusable": null,
+   "zoom_used": true,
+   "notes": "200 SMMLV, 2026-A, 2026 – 1, 2026A, No. 002 de 2025 verificados.",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "fragment_page": 11
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "physical_page": 12,
+   "kind": "firecrawl_ocr",
+   "prev_classification": "defect",
+   "new_classification": "defect",
+   "prev_defects_fixed": "partial",
+   "prev_defects_detail": "Tabla ahora con columnas correctas y 'Serán admitidos', 'inscripción' corregidos; pero falta Fecha Inicial de Inscripción.",
+   "new_defects": [
+    {
+     "type": "omission",
+     "detail": "img: Inscripción Fecha Inicial 28 de octubre de 2025 / new: celda vacía"
+    },
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: página web de Unitrópico / new: página web de Unitrófico"
+    },
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: Contigo” de Unitrópico, Convocatoria / new: de Unitrófico, Convocatoria"
+    },
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: convocatoria únicamente los / new: convocatoria unicamente los"
+    }
+   ],
+   "minor_notes": "Sin encabezado de logo; negritas perdidas ('Enlace:', 'Nota 1.'); comillas rectas en lugar de curvas.",
+   "recommendation": "use_new_with_corrections",
+   "corrections": [
+    {
+     "find_text": "|  | 10 de noviembre de 2025 6:00 pm |",
+     "replace_text": "| 28 de octubre de 2025 | 10 de noviembre de 2025 6:00 pm |",
+     "reason": "fecha inicial omitida en fila Inscripción",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "web de Unitrófico www",
+     "replace_text": "web de Unitrópico www",
+     "reason": "nombre alterado por OCR",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "de Unitrófico, Convocatoria",
+     "replace_text": "de Unitrópico, Convocatoria",
+     "reason": "nombre alterado por OCR",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "convocatoria unicamente los",
+     "replace_text": "convocatoria únicamente los",
+     "reason": "tilde perdida",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    }
+   ],
+   "vs_reusable": null,
+   "zoom_used": true,
+   "notes": "Divulgación 28 oct–10 nov 2025 correcto; fila Verificación sin fechas en esta página (continúan en p13).",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "fragment_page": 12
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "physical_page": 13,
+   "kind": "firecrawl_ocr",
+   "prev_classification": "defect",
+   "new_classification": "defect",
+   "prev_defects_fixed": "partial",
+   "prev_defects_detail": "Emparejamiento fecha-actividad ahora correcto (11–21 nov; 24 nov x2; 24–27 nov 6:00 p.m.; 28 nov); ruido de escaneo eliminado. Quedan errores de palabra.",
+   "new_defects": [
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: en el artículo 5 del presente acto / new: en el articulo 5"
+    },
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: la información del estudiante / new: la información de estudiante"
+    },
+    {
+     "type": "autocorrection",
+     "detail": "img: www.unitropico.eduo.co / new: www.unitrópico.edu.co"
+    }
+   ],
+   "minor_notes": "Fila de continuación (Verificación de Requisitos) emitida como <thead>; sin encabezado de logo; negritas perdidas.",
+   "recommendation": "use_new_with_corrections",
+   "corrections": [
+    {
+     "find_text": "establecidos en el articulo 5",
+     "replace_text": "establecidos en el artículo 5",
+     "reason": "tilde perdida",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "información de estudiante no coincide",
+     "replace_text": "información del estudiante no coincide",
+     "reason": "palabra alterada",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "Unitrópico www.unitrópico.edu.co",
+     "replace_text": "Unitrópico www.unitropico.eduo.co",
+     "reason": "URL autocorregida; original dice 'unitropico.eduo.co'",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    }
+   ],
+   "vs_reusable": null,
+   "zoom_used": true,
+   "notes": "Typo del original 'eduo.co' debe preservarse por literalidad; zoom 300 dpi confirma sin tilde en el dominio.",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "fragment_page": 13
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "physical_page": 14,
+   "kind": "firecrawl_ocr",
+   "prev_classification": "defect",
+   "new_classification": "defect",
+   "prev_defects_fixed": "partial",
+   "prev_defects_detail": "Tabla por filas con fechas correctamente asociadas (03–05 dic, 09 dic, 5 días, 2026-A, 30 días, 25 y 15 días); 'consignará' y URL corregidos. Nuevos errores de palabra.",
+   "new_defects": [
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: página web de Unitrópico (x2) / new: Unitrófico"
+    },
+    {
+     "type": "reading_order",
+     "detail": "img: Publicación Listado Final de Beneficiarios / new: Publicación Listado de Final Beneficiarios"
+    },
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: a nombre del estudiante beneficiario / new: a nombre de estudiante beneficiario"
+    }
+   ],
+   "minor_notes": "Primera fila como <thead> (continuación); viñetas '•' en línea; sin encabezado de logo.",
+   "recommendation": "use_new_with_corrections",
+   "corrections": [
+    {
+     "find_text": "web de Unitrófico www.unitropico.edu.co,",
+     "replace_text": "web de Unitrópico www.unitropico.edu.co,",
+     "reason": "nombre alterado por OCR",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "web de Unitrófico www.unitropico.edu.co micrositio",
+     "replace_text": "web de Unitrópico www.unitropico.edu.co micrositio",
+     "reason": "nombre alterado por OCR",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "Publicación Listado de Final Beneficiarios.",
+     "replace_text": "Publicación Listado Final de Beneficiarios.",
+     "reason": "orden de palabras alterado",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "a nombre de estudiante beneficiario",
+     "replace_text": "a nombre del estudiante beneficiario",
+     "reason": "palabra alterada",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    }
+   ],
+   "vs_reusable": null,
+   "zoom_used": true,
+   "notes": "No. 002 de 2025 correcto.",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "fragment_page": 14
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "physical_page": 15,
+   "kind": "firecrawl_ocr",
+   "prev_classification": "defect",
+   "new_classification": "defect",
+   "prev_defects_fixed": "yes",
+   "prev_defects_detail": "Corregidos 'carné estudiantil', 'documento', '(llamadas,', 'clara', 'método'.",
+   "new_defects": [
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: su condición de beneficiario / new: su condicion de beneficiario"
+    }
+   ],
+   "minor_notes": "Encabezado '# Unitrópico'; negritas perdidas; 'Bien-Estar' con guion de corte unido correctamente.",
+   "recommendation": "use_new_with_corrections",
+   "corrections": [
+    {
+     "find_text": "su condicion de beneficiario",
+     "replace_text": "su condición de beneficiario",
+     "reason": "tilde perdida",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    }
+   ],
+   "vs_reusable": null,
+   "zoom_used": true,
+   "notes": "Parágrafo 2, artículo 6, Acuerdo CS No. 069 de 2024, 25 y 15 días verificados.",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "fragment_page": 15
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "physical_page": 16,
+   "kind": "firecrawl_ocr",
+   "prev_classification": "defect",
+   "new_classification": "defect",
+   "prev_defects_fixed": "yes",
+   "prev_defects_detail": "Corregidos nombres y cargos de firmantes (CÉSAR ROLANDO CASTRO PINEDA, Presidente Comité de..., PUBLÍQUESE, Alieth del Roció).",
+   "new_defects": [
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: Oficina Asesora Jurídica y de Contratación / new: Asesora Junfrica y de Contratación"
+    }
+   ],
+   "minor_notes": "Pie de página institucional incluido (solo en esta página); heading '##' en fórmula de cierre. 'Jurídica' tachada por firma pero legible; se preservan 'ARTICULO 19' sin tilde y 'Roció' del original.",
+   "recommendation": "use_new_with_corrections",
+   "corrections": [
+    {
+     "find_text": "Asesora Junfrica y de Contratación",
+     "replace_text": "Asesora Jurídica y de Contratación",
+     "reason": "palabra alterada por OCR (firma superpuesta)",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    }
+   ],
+   "vs_reusable": null,
+   "zoom_used": true,
+   "notes": "27 de octubre de 2025 y veintisiete (27) verificados.",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "fragment_page": 16
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "physical_page": 5,
+   "kind": "literal_patch",
+   "prev_classification": "defect",
+   "new_classification": "minor",
+   "prev_defects_fixed": "yes",
+   "prev_defects_detail": "El guion de atencion-al-ciudadano se conserva (antes se perdía).",
+   "new_defects": [],
+   "minor_notes": "URL partida en dos líneas con etiquetas <u> (atencion-<u>al-</u> / <u>ciudadano...</u>); negritas markdown. Resto del glosario y nota 1 fieles (incluye literal \"2012.23\", \"Contemporaneo\", paréntesis sin cerrar en Incidencia).",
+   "recommendation": "use_new_with_corrections",
+   "corrections": [
+    {
+     "find_text": "atencion-<u>al-</u>\n<u>ciudadano/glosario/</u>)",
+     "replace_text": "atencion-al-ciudadano/glosario/)",
+     "reason": "Limpieza de formato: unir URL partida y quitar etiquetas <u> para que la URL sea literal y continua.",
+     "kind": "cosmetic",
+     "literal": true,
+     "confidence": "high"
+    }
+   ],
+   "vs_reusable": {
+    "verdict": "new_better",
+    "reason": "new conserva el guion de la URL (old: atencion-alciudadano); resto equivalente."
+   },
+   "zoom_used": true,
+   "notes": "Corrección solo cosmética; sin ella el contenido sigue siendo fiel.",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "fragment_page": 1
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "physical_page": 16,
+   "kind": "firecrawl_ocr",
+   "prev_classification": "defect",
+   "new_classification": "defect",
+   "prev_defects_fixed": "partial",
+   "prev_defects_detail": "Efectos indirectos/directos y problema central ahora extraídos y fieles; las causas directas/indirectas siguen mal (texto corrupto e inventado).",
+   "new_defects": [
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: Bajas competencias académicas / new: Bajs competenci de academica a"
+    },
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: Bajos ingresos para el sostenimiento / new: Bajs ingreso para la sostenimiento"
+    },
+    {
+     "type": "autocorrection",
+     "detail": "img: limitadas competencias transversales de los jóvenes / new: Limitada oferta de capacitaciones transversales de los (duplicada)"
+    },
+    {
+     "type": "omission",
+     "detail": "img: Limitado acompañamiento para la gestión de oportunidades... post gradual / new: (ausente)"
+    },
+    {
+     "type": "hallucination",
+     "detail": "img: Baja articulación intra e interinstitucional / new: Baja articulation intra-maternal/hospital"
+    },
+    {
+     "type": "hallucination",
+     "detail": "img: Limitada oferta de capacitación y acompañamiento... / new: Limited atención hacia la implementación... (inventado)"
+    },
+    {
+     "type": "omission",
+     "detail": "img: Bajas capacidades y competencias para la participación social / new: Bajs competenci de academica a (repetido)"
+    },
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: Falta de promoción y apoyo institucional hacia las iniciativas... espacios de partipación / new: ...y los necesidades de participación"
+    },
+    {
+     "type": "duplication",
+     "detail": "new: causas indirectas repetidas bajo CAUSAS DIRECTAS; \"Insuficiencia en la vita eductiva\""
+    }
+   ],
+   "minor_notes": "Encabezado \"Prosperidad Social\" duplicado (logo). Prosa del Diagnóstico fiel.",
+   "recommendation": "manual_review",
+   "corrections": [],
+   "vs_reusable": null,
+   "zoom_used": true,
+   "notes": "Ilustración 1 (árbol de problemas): mitad superior correcta; bloque de causas con muchas palabras inventadas, inglés mezclado y asignación directa/indirecta confusa. Requiere transcripción manual del bloque CAUSAS.",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "fragment_page": 2
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "physical_page": 17,
+   "kind": "firecrawl_ocr",
+   "prev_classification": "defect",
+   "new_classification": "defect",
+   "prev_defects_fixed": "partial",
+   "prev_defects_detail": "Se recupera \"6.389.448 (50,6%) son hombres\"; sigue faltando la línea de mujeres 6.241.974 (49,4%).",
+   "new_defects": [
+    {
+     "type": "figure_value_missing",
+     "detail": "img: 6.241.974 (49,4%) son mujeres / new: (ausente)"
+    },
+    {
+     "type": "omission",
+     "detail": "img: etiquetas \"Zona Rural\" y \"Zona Urbana\" de Ilustración 3 / new: (ausentes)"
+    }
+   ],
+   "minor_notes": "Placeholders [Image: ImageNNN] por íconos decorativos. Prosa y cifras (23,97%, 12.631.422, 76.38%, $396.864, A01-B07) fieles.",
+   "recommendation": "use_new_with_corrections",
+   "corrections": [
+    {
+     "find_text": "6.389.448 (50,6%) son hombres",
+     "replace_text": "6.241.974 (49,4%) son mujeres\n\n6.389.448 (50,6%) son hombres",
+     "reason": "Falta la línea de mujeres de la Ilustración 2.",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "2.983.689\n(23,6 %)",
+     "replace_text": "Zona Rural\n2.983.689\n(23,6 %)",
+     "reason": "Etiqueta de zona de la Ilustración 3.",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "9.647.733\n(76,4 %)",
+     "replace_text": "Zona Urbana\n9.647.733\n(76,4 %)",
+     "reason": "Etiqueta de zona de la Ilustración 3.",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    }
+   ],
+   "vs_reusable": null,
+   "zoom_used": true,
+   "notes": "Cifras verificadas con zoom.",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "fragment_page": 3
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "physical_page": 18,
+   "kind": "firecrawl_ocr",
+   "prev_classification": "defect",
+   "new_classification": "defect",
+   "prev_defects_fixed": "partial",
+   "prev_defects_detail": "Ilustración 5 ahora completa (8,2; 9,1; 9,5; 11,5; 13,6). Ilustración 4 sigue mal: % emparejados con grupo equivocado.",
+   "new_defects": [
+    {
+     "type": "table_mispairing",
+     "detail": "img (por color de leyenda): A 33%, B 35%, C 25%, D 7% / new: GRUPO SIS BEN 33, A 35, B 25, C 7, D vacío"
+    }
+   ],
+   "minor_notes": "\"GRUPO SIS BEN\" es el título de la leyenda (sin porción). Encabezados de tabla inventados (\"Category | Share (%)\", \"Años promedio de educación\") son formato. Prosa fiel. Valores de Ilustración 5 con punto decimal (img: coma) y sin coma; normalización de formato en tabla derivada del gráfico, cifras correctas.",
+   "recommendation": "use_new_with_corrections",
+   "corrections": [
+    {
+     "find_text": "| GRUPO SIS BEN | 33 |\n| A | 35 |\n| B | 25 |\n| C | 7 |\n| D |  |",
+     "replace_text": "| A | 33% |\n| B | 35% |\n| C | 25% |\n| D | 7% |",
+     "reason": "Emparejamiento verificado por color de porción vs leyenda; GRUPO SISBEN es título. [inferido por color; la leyenda del original incluye «GRUPO SISBEN» como categoría]",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "medium"
+    },
+    {
+     "find_text": "| Category | Share (%) |",
+     "replace_text": "| GRUPO SIS BEN | % |",
+     "reason": "Encabezado según leyenda del gráfico. [inferido por color; la leyenda del original incluye «GRUPO SISBEN» como categoría]",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "medium"
+    }
+   ],
+   "vs_reusable": null,
+   "zoom_used": true,
+   "notes": "Asignación de porcentajes verificada midiendo colores de píxeles de porciones y leyenda.",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "fragment_page": 4
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "physical_page": 20,
+   "kind": "firecrawl_ocr",
+   "prev_classification": "defect",
+   "new_classification": "defect",
+   "prev_defects_fixed": "partial",
+   "prev_defects_detail": "Ilustración 6 ahora tabulada; 35 de 36 valores correctos, pero fila 2010 desplazada.",
+   "new_defects": [
+    {
+     "type": "table_mispairing",
+     "detail": "img: 2010 Técnico profesional 22,46%, Tecnológico 18,15% / new: 18.15 | 17.9 (22,46 ausente, 17.9 inventado)"
+    }
+   ],
+   "minor_notes": "Tabla con punto decimal y sin \"%\" (img: 9,89%); encabezado \"Category\" inventado. Fuente y prosa (42%, 60%, 97%, 94.7%, 33,8%, 5.6%, 62%, 38%) fieles.",
+   "recommendation": "use_new_with_corrections",
+   "corrections": [
+    {
+     "find_text": "| 2010 | 9.89 | 18.15 | 17.9 |",
+     "replace_text": "| 2010 | 9.89 | 22.46 | 18.15 |",
+     "reason": "Valores 2010 verificados con zoom: Técnico 22,46%, Tecnológico 18,15%.",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    }
+   ],
+   "vs_reusable": null,
+   "zoom_used": true,
+   "notes": "Resto de valores (2011-2021, tres series) verificados uno por uno con zoom.",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "fragment_page": 5
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "physical_page": 21,
+   "kind": "firecrawl_ocr",
+   "prev_classification": "defect",
+   "new_classification": "defect",
+   "prev_defects_fixed": "yes",
+   "prev_defects_detail": "Los 12 valores de Ilustración 7 extraídos y emparejados correctamente con su nivel (verificado con zoom).",
+   "new_defects": [
+    {
+     "type": "autocorrection",
+     "detail": "img: Técnico o tecnólogo / new: Técnico o tecnologo (sin tilde)"
+    },
+    {
+     "type": "omission",
+     "detail": "img: Fuente: Cálculos de Prosperidad Social basado en la Gran Encuesta Integrada de Hogares 2019 / new: (ausente)"
+    }
+   ],
+   "minor_notes": "Etiqueta \"Está estudiando en el colegio\" en una sola línea. \"así́\" con doble acento es literal del original.",
+   "recommendation": "use_new_with_corrections",
+   "corrections": [
+    {
+     "find_text": "Técnico o tecnologo",
+     "replace_text": "Técnico o tecnólogo",
+     "reason": "Tilde presente en la imagen.",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "1,8%\nSon pobres",
+     "replace_text": "1,8%\nSon pobres\n\nFuente: Cálculos de Prosperidad Social basado en la Gran Encuesta Integrada de Hogares 2019",
+     "reason": "Línea de fuente de la ilustración omitida. [año «2019» leído en imagen de baja resolución; coincide con p22]",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "medium"
+    }
+   ],
+   "vs_reusable": null,
+   "zoom_used": true,
+   "notes": "El año de la fuente es una imagen de muy baja resolución; \"2019\" es la lectura más probable (último dígito con descendente), conviene confirmarlo.",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "fragment_page": 6
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "physical_page": 22,
+   "kind": "firecrawl_ocr",
+   "prev_classification": "defect",
+   "new_classification": "minor",
+   "prev_defects_fixed": "partial",
+   "prev_defects_detail": "Los seis valores de Tabla 1 extraídos y bien emparejados por edad/columna; pero los encabezados de sexo (íconos hombre/mujer) quedan vacíos.",
+   "new_defects": [],
+   "minor_notes": "Encabezados de columna de sexo vacíos (en la imagen son íconos: hombre turquesa, mujer rosa); \"14 – 19\" con guion simple. Prosa, cifras (46,68%, 43,27%, 17,71%, 56%) y notas 3-5 fieles; \"jóven\" literal.",
+   "recommendation": "use_new_with_corrections",
+   "corrections": [
+    {
+     "find_text": "<th>Edad</th><th></th><th></th>",
+     "replace_text": "<th>Edad</th><th>Hombres</th><th>Mujeres</th>",
+     "reason": "Sin encabezado no se sabe qué columna es cada sexo; en la imagen son íconos hombre (1ª) y mujer (2ª). [encabezados tomados de íconos, no de texto]",
+     "kind": "editorial",
+     "literal": false,
+     "confidence": "high"
+    }
+   ],
+   "vs_reusable": null,
+   "zoom_used": true,
+   "notes": "Corrección recomendada porque el sexo de cada columna solo está en los íconos; la prosa confirma mayor desempleo femenino (27,6%).",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "fragment_page": 7
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "physical_page": 30,
+   "kind": "firecrawl_ocr",
+   "prev_classification": "defect",
+   "new_classification": "ok",
+   "prev_defects_fixed": "yes",
+   "prev_defects_detail": "Etiquetas de los tres niveles de Ilustración 9 extraídas correctamente.",
+   "new_defects": [],
+   "minor_notes": "Encabezado \"Nivel 1...\" como ## markdown. Literales del original preservados (\"ilustración No 90\", \"ordenes\", comillas de cierre sueltas).",
+   "recommendation": "use_new",
+   "corrections": [],
+   "vs_reusable": null,
+   "zoom_used": false,
+   "notes": "Etiquetas del diagrama legibles en page.png.",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "fragment_page": 8
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "physical_page": 32,
+   "kind": "firecrawl_ocr",
+   "prev_classification": "defect",
+   "new_classification": "minor",
+   "prev_defects_fixed": "yes",
+   "prev_defects_detail": "Ilustración 10 ahora separada en dos listas (fundantes/integradoras) y Tabla 2 con cada columna y sus ítems correctamente asignados.",
+   "new_defects": [],
+   "minor_notes": "Encabezados markdown (####/###), viñetas \"•\" con cortes de línea internos (\"Comunicación \\nasertiva\"). Literales \"simultanea\", \"No10\" preservados.",
+   "recommendation": "use_new",
+   "corrections": [],
+   "vs_reusable": null,
+   "zoom_used": false,
+   "notes": "Todos los ítems verificados contra la imagen (legible a 150 dpi).",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "fragment_page": 9
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "physical_page": 44,
+   "kind": "firecrawl_ocr",
+   "prev_classification": "defect",
+   "new_classification": "defect",
+   "prev_defects_fixed": "partial",
+   "prev_defects_detail": "Ya no se pierden letras en IMPACTOS/MOVILIDAD SOCIAL/pobreza y aparece \"Incremento de la población joven titulada\"; pero falta un objetivo específico y hay varias erratas en Medios.",
+   "new_defects": [
+    {
+     "type": "omission",
+     "detail": "img: Contribuir a la integración de los jóvenes en procesos de acción social, política... / new: (ausente)"
+    },
+    {
+     "type": "autocorrection",
+     "detail": "img: educación post gradual de los jóvenes / new: educación postgradual de los jóvenes (2 veces post gradual)"
+    },
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: habilidades (x2) / new: habilitidades"
+    },
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: Tecnólogo / new: Tecnologo"
+    },
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: promoción de derechos / new: promoción de derches"
+    },
+    {
+     "type": "hallucination",
+     "detail": "img: ofertas de fortalecimiento de capacidades / new: ofertas de formación me de capacidades s"
+    },
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: hacia la empleabilidad, el emprendimiento / new: empleabilidad, si emprendimiento"
+    },
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: Encuentros experienciales; construcción de semilleros / new: experienclales; construccion de semiliteros"
+    },
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: certificación de participación / new: certificacion de participacion"
+    }
+   ],
+   "minor_notes": "Frase introductoria de 5.2 convertida en encabezado \"#\". Prosa de 5.2 (14 y 28 años, a/b) fiel.",
+   "recommendation": "use_new_with_corrections",
+   "corrections": [
+    {
+     "find_text": "Técnico, Tecnologo y Profesional",
+     "replace_text": "Técnico, Tecnólogo y Profesional",
+     "reason": "Tilde en imagen.",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "las habilitidades y competencias",
+     "replace_text": "las habilidades y competencias",
+     "reason": "Errata OCR.",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "las habilitidades para la vida",
+     "replace_text": "las habilidades para la vida",
+     "reason": "Errata OCR.",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "emprendimiento y educación postgradual de los jóvenes",
+     "replace_text": "emprendimiento y educación post gradual de los jóvenes\nContribuir a la integración de los jóvenes en procesos de acción social, política, ambiental y económica de su territorio",
+     "reason": "Literal \"post gradual\" y objetivo específico omitido.",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "promoción de derches",
+     "replace_text": "promoción de derechos",
+     "reason": "Errata OCR.",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "ofertas de formación me de capacidades s",
+     "replace_text": "ofertas de fortalecimiento de capacidades",
+     "reason": "Texto inventado; imagen: fortalecimiento.",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "empleabilidad, si emprendimiento y la educación postgradual",
+     "replace_text": "empleabilidad, el emprendimiento y la educación post gradual",
+     "reason": "Errata OCR y literal \"post gradual\".",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "experienclales",
+     "replace_text": "experienciales",
+     "reason": "Errata OCR.",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "construccion de semiliteros",
+     "replace_text": "construcción de semilleros",
+     "reason": "Errata OCR.",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "certificacion de participacion",
+     "replace_text": "certificación de participación",
+     "reason": "Tildes presentes en imagen.",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    }
+   ],
+   "vs_reusable": null,
+   "zoom_used": true,
+   "notes": "Diagrama verificado con zoom; tras 10 correcciones queda fiel. Si se prefiere, revisión manual del bloque Medios.",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "fragment_page": 10
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "physical_page": 45,
+   "kind": "literal_patch",
+   "prev_classification": "defect",
+   "new_classification": "minor",
+   "prev_defects_fixed": "yes",
+   "prev_defects_detail": "\"de población indígena\" ahora en su lugar en el ítem 2.",
+   "new_defects": [],
+   "minor_notes": "Ítem d. convertido en encabezado \"##\" (formato). Cifras (decreto 1780 de 2024, A01 a B18, grupos A, B o C) y literales (\"y o posgrado\") fieles.",
+   "recommendation": "use_new",
+   "corrections": [],
+   "vs_reusable": {
+    "verdict": "new_better",
+    "reason": "new corrige el orden de lectura del ítem 2 que old.txt desplazaba; resto equivalente."
+   },
+   "zoom_used": false,
+   "notes": "Texto nítido a 150 dpi; sin necesidad de zoom.",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "fragment_page": 11
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "physical_page": 46,
+   "kind": "firecrawl_ocr",
+   "prev_classification": "defect",
+   "new_classification": "defect",
+   "prev_defects_fixed": "partial",
+   "prev_defects_detail": "Impactos, resultados y procesos ahora extraídos (antes ausentes); la fila PRODUCTOS tiene palabras inventadas/corruptas.",
+   "new_defects": [
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: exclusión soci al y productiva / new: exclusión social al y productiva"
+    },
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: deserción enlos niveles Técnico, Tecnólogo / new: deserción ellos niveles Técnico, Tecnológico"
+    },
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: Cursos de formación / new: Curaos de formación"
+    },
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: Acciones que faciliten / new: Acciones que facilitan"
+    },
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: ofertas de fortalecimiento de capacidades / new: oferta de fortalecimiento to de capacidades"
+    },
+    {
+     "type": "hallucination",
+     "detail": "img: construcción de Rutas de acompañamiento hacia... post gradual / new: hues de accompañamiento o... pool prodicional"
+    },
+    {
+     "type": "hallucination",
+     "detail": "img: Encuentros experienciales (acciones... voluntariado) / new: experientiales (aciciones... voluntariat 0)"
+    },
+    {
+     "type": "hallucination",
+     "detail": "img: Transferencia monetaria y constancia de participación en el voluntariado / new: Transfore noja... constancié... voluntaría do"
+    },
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: semilleros; Línea (x3) / new: semiliteros; Linea"
+    },
+    {
+     "type": "omission",
+     "detail": "img: etiqueta INSUMOS / new: (ausente)"
+    }
+   ],
+   "minor_notes": "Impactos en una sola línea; secciones 5.3/5.4 fieles.",
+   "recommendation": "use_new_with_corrections",
+   "corrections": [
+    {
+     "find_text": "exclusión social al y productiva",
+     "replace_text": "exclusión social y productiva",
+     "reason": "Texto inventado \"al\" (imagen: \"soci al\", separación tipográfica).",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "deserción ellos niveles Técnico, Tecnológico",
+     "replace_text": "deserción enlos niveles Técnico, Tecnólogo",
+     "reason": "Literal de la imagen.",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "Curaos de formación",
+     "replace_text": "Cursos de formación",
+     "reason": "Errata OCR.",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "Acciones que facilitan",
+     "replace_text": "Acciones que faciliten",
+     "reason": "Literal de la imagen.",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "oferta de fortalecimiento to de capacidades",
+     "replace_text": "ofertas de fortalecimiento de capacidades",
+     "reason": "Errata OCR.",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "construcción de hues de accompañamiento o hacia",
+     "replace_text": "construcción de Rutas de acompañamiento hacia",
+     "reason": "Texto corrupto.",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "la educación pool prodicional",
+     "replace_text": "la educación post gradual",
+     "reason": "Texto corrupto.",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "Encuentros experientiales (aciciones de solidaridad en el marco del voluntariat 0)",
+     "replace_text": "Encuentros experienciales (acciones de solidaridad en el marco del voluntariado)",
+     "reason": "Texto corrupto.",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "construcción de semiliteros",
+     "replace_text": "construcción de semilleros",
+     "reason": "Errata OCR.",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "Transfore noja monetaria y constancié de participación en el voluntaría do",
+     "replace_text": "Transferencia monetaria y constancia de participación en el voluntariado",
+     "reason": "Texto corrupto.",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "Linea de promoción",
+     "replace_text": "Línea de promoción",
+     "reason": "Tilde en imagen.",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "Linea de expansión",
+     "replace_text": "Línea de expansión",
+     "reason": "Tilde en imagen.",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "Linea compromiso",
+     "replace_text": "Línea compromiso",
+     "reason": "Tilde en imagen.",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "ACTIVIDADES",
+     "replace_text": "ACTIVIDADES\nINSUMOS",
+     "reason": "Etiqueta omitida.",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    }
+   ],
+   "vs_reusable": null,
+   "zoom_used": true,
+   "notes": "14 correcciones verificadas con zoom; alternativa: revisión manual del bloque PRODUCTOS.",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "fragment_page": 12
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "physical_page": 54,
+   "kind": "firecrawl_ocr",
+   "prev_classification": "defect",
+   "new_classification": "defect",
+   "prev_defects_fixed": "partial",
+   "prev_defects_detail": "Tabla de Insumos ahora extraída casi completa (leyes, resolución, presupuesto); Ilustración 14 (tres listas) sigue prácticamente ausente.",
+   "new_defects": [
+    {
+     "type": "number_error",
+     "detail": "img: BPIN 2023000000000204 / new: BPIN 20230000000204 (faltan dos ceros)"
+    },
+    {
+     "type": "omission",
+     "detail": "img: pobreza o vulnerabilidad a nivel Nacional / new: pobreza vulnerable a nivel Nacional"
+    },
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: $4.1 billones COP / new: $4.1 billiones COP"
+    },
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: Alcaldías; DNP; Gestores indígenas / new: Alcaldas; DMP; Gestores indigenas"
+    },
+    {
+     "type": "autocorrection",
+     "detail": "img: Ley 2294 de 2023. Plan / new: Ley 2294 de 2023, Plan"
+    },
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: inversión; Módulos; Registraduría / new: inversion; Modulos; Registraduria"
+    },
+    {
+     "type": "omission",
+     "detail": "img: Ilustración 14 listas Productos (10), Resultados corto plazo (5), mediano/largo (6) / new: solo 2 ítems de Productos"
+    },
+    {
+     "type": "reading_order",
+     "detail": "img: los 2 ítems pertenecen a Productos / new: bajo \"Resultados de mediano y largo plazo\""
+    }
+   ],
+   "minor_notes": "Viñetas • y √; encabezado \"Actividades\" (texto tenue) incluido, faltan los otros rótulos tenues del flujo.",
+   "recommendation": "manual_review",
+   "corrections": [
+    {
+     "find_text": "BPIN 20230000000204",
+     "replace_text": "BPIN 2023000000000204",
+     "reason": "Número BPIN verificado con zoom.",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "pobreza vulnerable a nivel",
+     "replace_text": "pobreza o vulnerabilidad a nivel",
+     "reason": "Literal de la imagen.",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "billiones",
+     "replace_text": "billones",
+     "reason": "Errata OCR.",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "Proyecto de inversion",
+     "replace_text": "Proyecto de inversión",
+     "reason": "Tilde en imagen.",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "Ley 2294 de 2023, Plan",
+     "replace_text": "Ley 2294 de 2023. Plan",
+     "reason": "Puntuación literal.",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "√ Alcaldas:",
+     "replace_text": "√ Alcaldías:",
+     "reason": "Errata OCR.",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "Gestores indigenas",
+     "replace_text": "Gestores indígenas",
+     "reason": "Tilde en imagen.",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "√ DMP:",
+     "replace_text": "√ DNP:",
+     "reason": "Sigla correcta en imagen.",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "• Modulos de",
+     "replace_text": "• Módulos de",
+     "reason": "Tilde en imagen.",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "• Registraduria",
+     "replace_text": "• Registraduría",
+     "reason": "Tilde en imagen.",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    }
+   ],
+   "vs_reusable": null,
+   "zoom_used": true,
+   "notes": "Las correcciones arreglan la tabla de Insumos, pero la Ilustración 14 (≈21 ítems en 3 columnas) debe transcribirse manualmente; su contenido se repite en buena parte en p55.",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "fragment_page": 13
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "physical_page": 57,
+   "kind": "literal_patch",
+   "prev_classification": "defect",
+   "new_classification": "defect",
+   "prev_defects_fixed": "partial",
+   "prev_defects_detail": "URL CEPAL conserva el guion (11102-) aunque partida en dos líneas; siguen perdidos los guiones en preguntas-respuestas y empleo-informal/seguridad-social.",
+   "new_defects": [
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: ...inclusion-social-preguntas-respuestas-entenderlo / new: preguntasrespuestas"
+    },
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: ...mercado-laboral/empleo-informal-y-seguridad-social#:~ / new: empleoinformal-y-seguridadsocial"
+    }
+   ],
+   "minor_notes": "Cursivas markdown. Literales \"Admionistración\", \"Alberdi ,\", \"Crocker ,\", \"Social. .\" preservados.",
+   "recommendation": "use_new_with_corrections",
+   "corrections": [
+    {
+     "find_text": "11102-\naproximacion",
+     "replace_text": "11102-aproximacion",
+     "reason": "Unir URL partida (guion forma parte de la URL).",
+     "kind": "cosmetic",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "preguntasrespuestas",
+     "replace_text": "preguntas-respuestas",
+     "reason": "Guion de la URL perdido en corte de línea.",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "empleoinformal-y-seguridadsocial",
+     "replace_text": "empleo-informal-y-seguridad-social",
+     "reason": "Guiones de la URL perdidos en cortes de línea.",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    }
+   ],
+   "vs_reusable": {
+    "verdict": "equivalent",
+    "reason": "new conserva el guion de 11102- pero arrastra los mismos guiones perdidos que old en las otras dos URL."
+   },
+   "zoom_used": true,
+   "notes": "URLs verificadas carácter a carácter con zoom.",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "fragment_page": 14
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "physical_page": 58,
+   "kind": "literal_patch",
+   "prev_classification": "defect",
+   "new_classification": "defect",
+   "prev_defects_fixed": "no",
+   "prev_defects_detail": "Siguen perdidos los guiones de URL (aspectos-relevantes x2, joint-programme, transformative-approaches).",
+   "new_defects": [
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: liderazgo-aspectos-relevantes/ (2 veces) / new: aspectosrelevantes/"
+    },
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: fao.org/joint-programme-... gender-transformative-approaches/en / new: jointprogramme ... transformativeapproaches"
+    },
+    {
+     "type": "omission",
+     "detail": "img: entrada \"DNP. (2012). Guía para la Incorporación...\" 3 veces / new: 1 vez (duplicados eliminados)"
+    }
+   ],
+   "minor_notes": "Cursivas markdown; un salto de cursiva partido. Literales \"(201)\", \"Planación\", \"Hacía\", \"EuroSociaL\" preservados.",
+   "recommendation": "use_new_with_corrections",
+   "corrections": [
+    {
+     "find_text": "DNP. (2012). *Guía para la Incorporación de la Variable Étnica.*",
+     "replace_text": "DNP. (2012). *Guía para la Incorporación de la Variable Étnica.*\n\nDNP. (2012). *Guía para la Incorporación de la Variable Étnica.*\n\nDNP. (2012). *Guía para la Incorporación de la Variable Étnica.*",
+     "reason": "El original repite la entrada tres veces; restaurar literalidad.",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "aspectosrelevantes/\n\nEscuela",
+     "replace_text": "aspectos-relevantes/\n\nEscuela",
+     "reason": "Guion de URL perdido en corte de línea.",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "aspectosrelevantes/\n\nEUROSociAL",
+     "replace_text": "aspectos-relevantes/\n\nEUROSociAL",
+     "reason": "Guion de URL perdido en corte de línea.",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "fao.org/jointprogramme",
+     "replace_text": "fao.org/joint-programme",
+     "reason": "Guion de URL perdido.",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "gender-transformativeapproaches/en",
+     "replace_text": "gender-transformative-approaches/en",
+     "reason": "Guion de URL perdido.",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    }
+   ],
+   "vs_reusable": {
+    "verdict": "old_better",
+    "reason": "Ambos pierden los mismos guiones de URL, pero new elimina dos entradas DNP (2012) repetidas que old conserva."
+   },
+   "zoom_used": true,
+   "notes": "URLs verificadas con zoom.",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "fragment_page": 15
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "physical_page": 59,
+   "kind": "literal_patch",
+   "prev_classification": "defect",
+   "new_classification": "defect",
+   "prev_defects_fixed": "no",
+   "prev_defects_detail": "Siguen perdidos los guiones de URL (\"yejemplos\", \"emprendimientoque\").",
+   "new_defects": [
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: caracteristicas-y-ejemplos/ (URL en cursiva) / new: caracteristicas-yejemplos/"
+    },
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: responsabilidadsocial.net/emprendimiento-que-es / new: emprendimientoque-es"
+    }
+   ],
+   "minor_notes": "URL de redalyc partida en dos líneas (el%\\n20caso), igual que en la imagen. Literales \"Der5\", \"Contemporaneo\", \"lactea\", \"mision\", \"Max Neef\" preservados.",
+   "recommendation": "use_new_with_corrections",
+   "corrections": [
+    {
+     "find_text": "caracteristicas-yejemplos/",
+     "replace_text": "caracteristicas-y-ejemplos/",
+     "reason": "Guion de URL perdido en corte de línea.",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "net/emprendimientoque-es",
+     "replace_text": "net/emprendimiento-que-es",
+     "reason": "Guion de URL perdido en corte de línea.",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "En%20el%\n20caso",
+     "replace_text": "En%20el%20caso",
+     "reason": "Unir URL partida en salto de línea (opcional, cosmético).",
+     "kind": "cosmetic",
+     "literal": true,
+     "confidence": "high"
+    }
+   ],
+   "vs_reusable": {
+    "verdict": "equivalent",
+    "reason": "new y old tienen exactamente los mismos defectos de guiones en URL; new solo añade formato markdown."
+   },
+   "zoom_used": true,
+   "notes": "URLs verificadas carácter a carácter con zoom.",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "fragment_page": 16
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "physical_page": 61,
+   "kind": "literal_patch",
+   "prev_classification": "defect",
+   "new_classification": "defect",
+   "prev_defects_fixed": "no",
+   "prev_defects_detail": "Siguen perdidos los tres guiones de URL (caracteristicas-y, el-voluntariado, voluntariado-ambiental).",
+   "new_defects": [
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: tipos-caracteristicas-y-ejemplos/ / new: caracteristicasy-ejemplos/"
+    },
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: /es/que-es-el-voluntariado/#:~ / new: que-es-elvoluntariado/"
+    },
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: /articles/voluntariado-ambiental#:~ / new: voluntariadoambiental#"
+    }
+   ],
+   "minor_notes": "URLs largas partidas en saltos de línea sin guion (Jo/venes, la%/20vida, cu%C/3%A1les) como en la imagen. Literales \"Teoria\", \"Defintivo\", \"Stieben, I.\" preservados; cursivas markdown.",
+   "recommendation": "use_new_with_corrections",
+   "corrections": [
+    {
+     "find_text": "caracteristicasy-ejemplos/",
+     "replace_text": "caracteristicas-y-ejemplos/",
+     "reason": "Guion de URL perdido en corte de línea.",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "que-es-elvoluntariado/",
+     "replace_text": "que-es-el-voluntariado/",
+     "reason": "Guion de URL perdido en corte de línea.",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "articles/voluntariadoambiental#",
+     "replace_text": "articles/voluntariado-ambiental#",
+     "reason": "Guion de URL perdido en corte de línea.",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "TMC/Jo\nvenes/",
+     "replace_text": "TMC/Jovenes/",
+     "reason": "Unir URL partida a mitad de palabra (cosmético).",
+     "kind": "cosmetic",
+     "literal": true,
+     "confidence": "high"
+    }
+   ],
+   "vs_reusable": {
+    "verdict": "equivalent",
+    "reason": "new y old pierden los mismos tres guiones de URL; new solo añade formato markdown."
+   },
+   "zoom_used": true,
+   "notes": "URLs verificadas carácter a carácter con zoom.",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "fragment_page": 17
+  },
+  {
+   "lot": "03-manual-m-ip-36-1of2",
+   "physical_page": 14,
+   "kind": "firecrawl_ocr",
+   "prev_classification": "defect",
+   "new_classification": "minor",
+   "prev_defects_fixed": "yes",
+   "prev_defects_detail": "Siglas y expansiones ahora emparejadas fila a fila en tabla markdown; referencias normativas completas y correctas.",
+   "new_defects": [],
+   "minor_notes": "'Prosperidad Social' partido en dos filas (fila 'Social' con celda vacía); pie 'Código F-DE-3 / Página 14 de 75' omitido.",
+   "recommendation": "use_new_with_corrections",
+   "corrections": [
+    {
+     "find_text": "| Prosperidad | Departamento Administrativo para la Prosperidad Social |\n| Social |  |",
+     "replace_text": "| Prosperidad Social | Departamento Administrativo para la Prosperidad Social |",
+     "reason": "La sigla 'Prosperidad Social' es una sola celda en el original (salto de línea).",
+     "kind": "cosmetic",
+     "literal": true,
+     "confidence": "high"
+    }
+   ],
+   "vs_reusable": null,
+   "zoom_used": false,
+   "notes": "Página nítida a 150 dpi; los 14 pares sigla-expansión verificados contra la imagen. Corrección opcional (cosmética de tabla).",
+   "source": "documents/documentos_bienestar/M-IP-36 MANUAL PROGRAMA RENTA JOVEN V1.pdf",
+   "fragment_page": 1
+  },
+  {
+   "lot": "03-manual-m-ip-36-1of2",
+   "physical_page": 18,
+   "kind": "literal_patch",
+   "prev_classification": "defect",
+   "new_classification": "ok",
+   "prev_defects_fixed": "yes",
+   "prev_defects_detail": "'hay' ahora en su sitio: 'firmados cuando hay intervención'.",
+   "new_defects": [],
+   "minor_notes": "Pie de página (F-DE-3, Página 18 de 75) omitido.",
+   "recommendation": "use_new",
+   "corrections": [],
+   "vs_reusable": {
+    "verdict": "new_better",
+    "reason": "new.md corrige el orden de 'hay' y conserva literal el resto (incl. typo 'se llevas')."
+   },
+   "zoom_used": false,
+   "notes": "Prosa fiel; typo original 'se llevas a cabo' preservado.",
+   "source": "documents/documentos_bienestar/M-IP-36 MANUAL PROGRAMA RENTA JOVEN V1.pdf",
+   "fragment_page": 2
+  },
+  {
+   "lot": "03-manual-m-ip-36-1of2",
+   "physical_page": 19,
+   "kind": "firecrawl_ocr",
+   "prev_classification": "defect",
+   "new_classification": "defect",
+   "prev_defects_fixed": "yes",
+   "prev_defects_detail": "Tabla 1 ahora emparejada correctamente Responsable|Rol en las 5 filas.",
+   "new_defects": [
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: verificación administrativa operativa y financiera de los programas / new: ... y financieras de los programas"
+    }
+   ],
+   "minor_notes": "Pie de página omitido; fila GIT Antifraudes termina en 'por medio de la' (continúa en p20, igual que el original).",
+   "recommendation": "use_new_with_corrections",
+   "corrections": [
+    {
+     "find_text": "operativa y financieras de los programas",
+     "replace_text": "operativa y financiera de los programas",
+     "reason": "El original dice 'financiera' (singular); confirmado también en old.txt.",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    }
+   ],
+   "vs_reusable": null,
+   "zoom_used": false,
+   "notes": "Resto de la prosa y tabla fiel.",
+   "source": "documents/documentos_bienestar/M-IP-36 MANUAL PROGRAMA RENTA JOVEN V1.pdf",
+   "fragment_page": 3
+  },
+  {
+   "lot": "03-manual-m-ip-36-1of2",
+   "physical_page": 20,
+   "kind": "firecrawl_ocr",
+   "prev_classification": "defect",
+   "new_classification": "ok",
+   "prev_defects_fixed": "yes",
+   "prev_defects_detail": "Tabla 1 (cont.) emparejada correctamente en las 6 filas, incluida la fila de continuación sin responsable.",
+   "new_defects": [],
+   "minor_notes": "Pie de página omitido.",
+   "recommendation": "use_new",
+   "corrections": [],
+   "vs_reusable": null,
+   "zoom_used": false,
+   "notes": "Texto de roles verificado palabra a palabra.",
+   "source": "documents/documentos_bienestar/M-IP-36 MANUAL PROGRAMA RENTA JOVEN V1.pdf",
+   "fragment_page": 4
+  },
+  {
+   "lot": "03-manual-m-ip-36-1of2",
+   "physical_page": 23,
+   "kind": "firecrawl_ocr",
+   "prev_classification": "defect",
+   "new_classification": "minor",
+   "prev_defects_fixed": "yes",
+   "prev_defects_detail": "Título 'Comité de Seguimiento al Convenio con los municipios y departamentos' ahora en orden; viñetas unidas a su texto.",
+   "new_defects": [],
+   "minor_notes": "Título convertido en encabezado markdown '## ➢'; viñetas '▪' separadas por líneas en blanco; pie de página omitido.",
+   "recommendation": "use_new",
+   "corrections": [],
+   "vs_reusable": null,
+   "zoom_used": false,
+   "notes": "Arts. 9, 10 y 11 de la Ley 489 de 1998 correctos; prosa fiel.",
+   "source": "documents/documentos_bienestar/M-IP-36 MANUAL PROGRAMA RENTA JOVEN V1.pdf",
+   "fragment_page": 5
+  },
+  {
+   "lot": "03-manual-m-ip-36-1of2",
+   "physical_page": 27,
+   "kind": "firecrawl_ocr",
+   "prev_classification": "defect",
+   "new_classification": "defect",
+   "prev_defects_fixed": "partial",
+   "prev_defects_detail": "Texto de la Ilustración ahora extraído (IES/SENA/ENS, niveles, componentes, ciclo, líneas) y prosa 9.3 fiel con guion 'Aprendizaje - SENA'. Pero se pierden tildes y la asociación de cada lista con su componente queda implícita.",
+   "new_defects": [
+    {
+     "type": "autocorrection",
+     "detail": "img: Líneas / new: Lineas (tilde perdida)"
+    },
+    {
+     "type": "autocorrection",
+     "detail": "img: Inscripción / new: Inscripcion"
+    },
+    {
+     "type": "autocorrection",
+     "detail": "img: Verificación / new: Verificacion"
+    },
+    {
+     "type": "reading_order",
+     "detail": "img: lista Focalización…Entrega junto a 'Ciclo Operativo'; Compromiso…Movilidad junto a 'Líneas' / new: ambas listas al final sin rótulo"
+    }
+   ],
+   "minor_notes": "Figura aplanada en una línea por palabra; pie de página omitido.",
+   "recommendation": "use_new_with_corrections",
+   "corrections": [
+    {
+     "find_text": "Lineas\n□ Focalización",
+     "replace_text": "Líneas\n□ Focalización",
+     "reason": "tilde del original",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "Lineas\n□ Focalización",
+     "replace_text": "Líneas\n[Ciclo Operativo]\n□ Focalización",
+     "reason": "OPCIONAL (no literal): alternativa a la anterior que además rotula el grupo «Ciclo Operativo»; aplicar una u otra, no ambas",
+     "kind": "editorial",
+     "literal": false,
+     "confidence": "high",
+     "optional": true
+    },
+    {
+     "find_text": "□ Inscripcion",
+     "replace_text": "□ Inscripción",
+     "reason": "El original lleva tilde.",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "□ Verificacion",
+     "replace_text": "□ Verificación",
+     "reason": "El original lleva tilde.",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "□ Compromiso social para",
+     "replace_text": "[Líneas]\n□ Compromiso social para",
+     "reason": "En la figura estas 3 líneas corresponden al rótulo 'Líneas'.",
+     "kind": "editorial",
+     "literal": false,
+     "confidence": "high",
+     "optional": true
+    }
+   ],
+   "vs_reusable": null,
+   "zoom_used": true,
+   "notes": "Fecha 31 dic 2023 y Resolución 00137 del 2024 verificadas. Los rótulos entre corchetes son ayuda estructural (texto existente en la figura).",
+   "source": "documents/documentos_bienestar/M-IP-36 MANUAL PROGRAMA RENTA JOVEN V1.pdf",
+   "fragment_page": 6
+  },
+  {
+   "lot": "03-manual-m-ip-36-1of2",
+   "physical_page": 28,
+   "kind": "firecrawl_ocr",
+   "prev_classification": "defect",
+   "new_classification": "minor",
+   "prev_defects_fixed": "yes",
+   "prev_defects_detail": "Título 9.4 ahora en orden correcto (aunque partido en 4 encabezados markdown).",
+   "new_defects": [],
+   "minor_notes": "Título 9.4 fragmentado en cuatro '##'; pie de página omitido.",
+   "recommendation": "use_new_with_corrections",
+   "corrections": [
+    {
+     "find_text": "## 9.4. COMPONENTE DE\n\n## TRANSFERENCIAS\n\n## MONETARIAS\n\n## CONDICIONADAS",
+     "replace_text": "## 9.4. COMPONENTE DE TRANSFERENCIAS MONETARIAS CONDICIONADAS",
+     "reason": "Unifica el título, que en el original es uno solo (justificado).",
+     "kind": "cosmetic",
+     "literal": true,
+     "confidence": "high"
+    }
+   ],
+   "vs_reusable": null,
+   "zoom_used": false,
+   "notes": "Lista 1-7, '1 año', art. 1.4.2 Res. 00137 de 2024 verificados. Corrección cosmética opcional.",
+   "source": "documents/documentos_bienestar/M-IP-36 MANUAL PROGRAMA RENTA JOVEN V1.pdf",
+   "fragment_page": 7
+  },
+  {
+   "lot": "03-manual-m-ip-36-1of2",
+   "physical_page": 29,
+   "kind": "firecrawl_ocr",
+   "prev_classification": "defect",
+   "new_classification": "defect",
+   "prev_defects_fixed": "partial",
+   "prev_defects_detail": "Etiquetas de la Ilustración 2 ahora extraídas (7 cajas); pero una palabra cambiada.",
+   "new_defects": [
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: 2. Verificación de condicionalidades y corresponsabilidades / new: ... y correspondencias"
+    }
+   ],
+   "minor_notes": "Etiquetas del ciclo en orden espacial, no de flujo (Focalización→Inscripciones→1→…→5); la numeración permite reconstruirlo. Pie de página omitido.",
+   "recommendation": "use_new_with_corrections",
+   "corrections": [
+    {
+     "find_text": "condicionalidades y correspondencias",
+     "replace_text": "condicionalidades y corresponsabilidades",
+     "reason": "El original dice 'corresponsabilidades' (verificado con zoom).",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    }
+   ],
+   "vs_reusable": null,
+   "zoom_used": true,
+   "notes": "Prosa F-IP-287 y título 9.4.1 fieles.",
+   "source": "documents/documentos_bienestar/M-IP-36 MANUAL PROGRAMA RENTA JOVEN V1.pdf",
+   "fragment_page": 8
+  },
+  {
+   "lot": "03-manual-m-ip-36-1of2",
+   "physical_page": 35,
+   "kind": "firecrawl_ocr",
+   "prev_classification": "defect",
+   "new_classification": "defect",
+   "prev_defects_fixed": "yes",
+   "prev_defects_detail": "Tabla de novedades (4 columnas) ahora emparejada fila a fila, con rowspan correcto para 'Específicas'.",
+   "new_defects": [
+    {
+     "type": "ocr_misspelling",
+     "detail": "img: programas universitarios y/o posgrados, de acuerdo / new: y/o posgados, de acuerdo"
+    },
+    {
+     "type": "autocorrection",
+     "detail": "img: Específicas / new: Especificas (tilde perdida)"
+    }
+   ],
+   "minor_notes": "'Superior – SNIES' con guion corto en vez de raya; pie de página omitido.",
+   "recommendation": "use_new_with_corrections",
+   "corrections": [
+    {
+     "find_text": "y/o posgados, de acuerdo",
+     "replace_text": "y/o posgrados, de acuerdo",
+     "reason": "El original dice 'posgrados' (zoom y old.txt).",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    },
+    {
+     "find_text": "<td rowspan=\"2\">Especificas</td>",
+     "replace_text": "<td rowspan=\"2\">Específicas</td>",
+     "reason": "El original lleva tilde.",
+     "kind": "substantive",
+     "literal": true,
+     "confidence": "high"
+    }
+   ],
+   "vs_reusable": null,
+   "zoom_used": true,
+   "notes": "Entidades (DNP, MEN, SENA/IES) correctamente alineadas con su fila; 'por el cuál' original preservado.",
+   "source": "documents/documentos_bienestar/M-IP-36 MANUAL PROGRAMA RENTA JOVEN V1.pdf",
+   "fragment_page": 9
+  },
+  {
+   "lot": "03-manual-m-ip-36-1of2",
+   "physical_page": 36,
+   "kind": "firecrawl_ocr",
+   "prev_classification": "defect",
+   "new_classification": "minor",
+   "prev_defects_fixed": "yes",
+   "prev_defects_detail": "Tabla 4: las 8 filas tipo|descripción emparejadas correctamente y etiquetas en orden.",
+   "new_defects": [],
+   "minor_notes": "Salto de párrafo perdido en 'del programa Cada participante' (el original tampoco tiene punto); pie de página omitido.",
+   "recommendation": "use_new",
+   "corrections": [],
+   "vs_reusable": null,
+   "zoom_used": false,
+   "notes": "'una (1) sola vez', 'un año calendario', 'grado 11', typo original 'en el cuál ingresó' preservados.",
+   "source": "documents/documentos_bienestar/M-IP-36 MANUAL PROGRAMA RENTA JOVEN V1.pdf",
+   "fragment_page": 10
+  },
+  {
+   "lot": "03-manual-m-ip-36-1of2",
+   "physical_page": 38,
+   "kind": "firecrawl_ocr",
+   "prev_classification": "defect",
+   "new_classification": "minor",
+   "prev_defects_fixed": "yes",
+   "prev_defects_detail": "Tabla 5: encabezados en orden y frecuencias emparejadas con Matrícula y Permanencia; texto de excelencia ya no intercalado.",
+   "new_defects": [],
+   "minor_notes": "En el original Permanencia y Excelencia comparten una misma celda (y la celda de frecuencia); new.md pone Excelencia en fila propia con frecuencia vacía (limitación markdown, sin pérdida: la frecuencia dice 'La TMC por excelencia es adicional...'). Pie omitido.",
+   "recommendation": "use_new",
+   "corrections": [],
+   "vs_reusable": null,
+   "zoom_used": false,
+   "notes": "Promedios 3.0 y 4.0, 'dos veces al año' verificados; 'STMC- Prosperidad' literal.",
+   "source": "documents/documentos_bienestar/M-IP-36 MANUAL PROGRAMA RENTA JOVEN V1.pdf",
+   "fragment_page": 11
+  },
+  {
+   "lot": "03-manual-m-ip-36-1of2",
+   "physical_page": 40,
+   "kind": "firecrawl_ocr",
+   "prev_classification": "defect",
+   "new_classification": "ok",
+   "prev_defects_fixed": "yes",
+   "prev_defects_detail": "Tabla 9 ahora con filas completas Entidad|Reporte|Contenido|Línea, rowspan MEN-SIMAT correcto; textos ya no partidos.",
+   "new_defects": [],
+   "minor_notes": "Raya '–' de 'Superiores – ENS' como guion; pie de página omitido.",
+   "recommendation": "use_new",
+   "corrections": [],
+   "vs_reusable": null,
+   "zoom_used": false,
+   "notes": "Celda vacía de frecuencia en la tabla superior (60 horas) es fiel al original; 'R1' y comas verificadas.",
+   "source": "documents/documentos_bienestar/M-IP-36 MANUAL PROGRAMA RENTA JOVEN V1.pdf",
+   "fragment_page": 12
+  }
+ ],
+ "corrections": [
+  {
+   "lot": "01-res-cbu-002-2025",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "physical_page": 1,
+   "find_text": "Açuerdo CS No. 069",
+   "replace_text": "Acuerdo CS No. 069",
+   "reason": "cedilla espuria; el original dice Acuerdo",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "physical_page": 2,
+   "find_text": "graduación de los estudiantes.",
+   "replace_text": "graduación de los estudiante.",
+   "reason": "el original tiene el typo 'estudiante' (singular)",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "physical_page": 2,
+   "find_text": "beneficios, estimulos, incentivos",
+   "replace_text": "beneficios, estímulos, incentivos",
+   "reason": "tilde presente en el original",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "physical_page": 3,
+   "find_text": "regulado por a Resolución",
+   "replace_text": "regulado por la Resolución",
+   "reason": "'l' desvaída en el escaneo; lectura más probable",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "medium"
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "physical_page": 3,
+   "find_text": "entendírcose como acuellos",
+   "replace_text": "entendiéndose como aquellos",
+   "reason": "error OCR",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "physical_page": 3,
+   "find_text": "carácter genera o particular",
+   "replace_text": "carácter general o particular",
+   "reason": "error OCR",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "physical_page": 3,
+   "find_text": "alineaco con los",
+   "replace_text": "alineado con los",
+   "reason": "error OCR",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "physical_page": 3,
+   "find_text": "2024–2028, er el eje",
+   "replace_text": "2024–2028, en el eje",
+   "reason": "error OCR",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "physical_page": 3,
+   "find_text": "Bienestary Permanencia",
+   "replace_text": "Bienestar y Permanencia",
+   "reason": "palabras fusionadas",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "physical_page": 3,
+   "find_text": "el bienestar estudiante,",
+   "replace_text": "el bienestar estudiantil,",
+   "reason": "error OCR",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "physical_page": 3,
+   "find_text": "al perico académico",
+   "replace_text": "al periodo académico",
+   "reason": "error OCR",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "physical_page": 3,
+   "find_text": "Alimentación de Programa",
+   "replace_text": "Alimentación del Programa",
+   "reason": "error OCR",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "physical_page": 3,
+   "find_text": "para el concimiento",
+   "replace_text": "para el conocimiento",
+   "reason": "error OCR",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "physical_page": 3,
+   "find_text": "estudiantes de Unitrófico.",
+   "replace_text": "estudiantes de Unitrópico.",
+   "reason": "error OCR",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "physical_page": 3,
+   "find_text": "Americano, Unitrófico, en mérito",
+   "replace_text": "Americano, Unitrópico, en mérito",
+   "reason": "error OCR",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "physical_page": 3,
+   "find_text": "Americano Unitrófico de conformidad",
+   "replace_text": "Americano Unitrópico de conformidad",
+   "reason": "error OCR",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "physical_page": 3,
+   "find_text": "El presente acte tiene",
+   "replace_text": "El presente acto tiene",
+   "reason": "error OCR",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "physical_page": 3,
+   "find_text": "Alimentación descrrito en",
+   "replace_text": "Alimentación descrito en",
+   "reason": "error OCR",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "physical_page": 3,
+   "find_text": "con las discosiciones del",
+   "replace_text": "con las disposiciones del",
+   "reason": "error OCR",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "physical_page": 3,
+   "find_text": "se naran efectivos",
+   "replace_text": "se harán efectivos",
+   "reason": "error OCR",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "physical_page": 4,
+   "find_text": "busca reconcer la",
+   "replace_text": "busca reconocer la",
+   "reason": "error OCR",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "physical_page": 4,
+   "find_text": "reconociendolos como",
+   "replace_text": "reconociéndolos como",
+   "reason": "tilde del original",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "physical_page": 4,
+   "find_text": "posibilito así,",
+   "replace_text": "posibilitando así,",
+   "reason": "error OCR",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "physical_page": 5,
+   "find_text": "el período académico cursado",
+   "replace_text": "el periodo académico cursado",
+   "reason": "el original escribe 'periodo' sin tilde",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "physical_page": 5,
+   "find_text": "deberá aduntarse",
+   "replace_text": "deberá adjuntarse",
+   "reason": "la j está dañada en el escaneo pero existe",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "physical_page": 6,
+   "find_text": "dentro de las lineas de acción",
+   "replace_text": "dentro de las líneas de acción",
+   "reason": "tilde del original",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "physical_page": 7,
+   "find_text": "discrepancias, falsidad o adulteración entre",
+   "replace_text": "discrepancias, falsedad o adulteración entre",
+   "reason": "error OCR",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "physical_page": 7,
+   "find_text": "discrepancias, falsidad o adulteración en la",
+   "replace_text": "discrepancias, falsedad o adulteración en la",
+   "reason": "error OCR",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "physical_page": 7,
+   "find_text": "completa y verifiable",
+   "replace_text": "completa y verificable",
+   "reason": "error OCR",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "physical_page": 7,
+   "find_text": "durante el período académico",
+   "replace_text": "durante el periodo académico",
+   "reason": "el original escribe 'periodo' sin tilde",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "physical_page": 8,
+   "find_text": "orientan la Politica Integral",
+   "replace_text": "orientan la Política Integral",
+   "reason": "tilde del original",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "physical_page": 8,
+   "find_text": "Hayan incurido en",
+   "replace_text": "Hayan incurrido en",
+   "reason": "error OCR",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "physical_page": 9,
+   "find_text": "decisión de suspension será",
+   "replace_text": "decisión de suspensión será",
+   "reason": "tilde perdida",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "physical_page": 9,
+   "find_text": "La suspENSION no implicará",
+   "replace_text": "La suspensión no implicará",
+   "reason": "OCR mayúsculas/tilde erróneas",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "physical_page": 10,
+   "find_text": "grupos prioritizados determinados",
+   "replace_text": "grupos priorizados determinados",
+   "reason": "palabra alterada por OCR",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "physical_page": 12,
+   "find_text": "|  | 10 de noviembre de 2025 6:00 pm |",
+   "replace_text": "| 28 de octubre de 2025 | 10 de noviembre de 2025 6:00 pm |",
+   "reason": "fecha inicial omitida en fila Inscripción",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "physical_page": 12,
+   "find_text": "web de Unitrófico www",
+   "replace_text": "web de Unitrópico www",
+   "reason": "nombre alterado por OCR",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "physical_page": 12,
+   "find_text": "de Unitrófico, Convocatoria",
+   "replace_text": "de Unitrópico, Convocatoria",
+   "reason": "nombre alterado por OCR",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "physical_page": 12,
+   "find_text": "convocatoria unicamente los",
+   "replace_text": "convocatoria únicamente los",
+   "reason": "tilde perdida",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "physical_page": 13,
+   "find_text": "establecidos en el articulo 5",
+   "replace_text": "establecidos en el artículo 5",
+   "reason": "tilde perdida",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "physical_page": 13,
+   "find_text": "información de estudiante no coincide",
+   "replace_text": "información del estudiante no coincide",
+   "reason": "palabra alterada",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "physical_page": 13,
+   "find_text": "Unitrópico www.unitrópico.edu.co",
+   "replace_text": "Unitrópico www.unitropico.eduo.co",
+   "reason": "URL autocorregida; original dice 'unitropico.eduo.co'",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "physical_page": 14,
+   "find_text": "web de Unitrófico www.unitropico.edu.co,",
+   "replace_text": "web de Unitrópico www.unitropico.edu.co,",
+   "reason": "nombre alterado por OCR",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "physical_page": 14,
+   "find_text": "web de Unitrófico www.unitropico.edu.co micrositio",
+   "replace_text": "web de Unitrópico www.unitropico.edu.co micrositio",
+   "reason": "nombre alterado por OCR",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "physical_page": 14,
+   "find_text": "Publicación Listado de Final Beneficiarios.",
+   "replace_text": "Publicación Listado Final de Beneficiarios.",
+   "reason": "orden de palabras alterado",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "physical_page": 14,
+   "find_text": "a nombre de estudiante beneficiario",
+   "replace_text": "a nombre del estudiante beneficiario",
+   "reason": "palabra alterada",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "physical_page": 15,
+   "find_text": "su condicion de beneficiario",
+   "replace_text": "su condición de beneficiario",
+   "reason": "tilde perdida",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "01-res-cbu-002-2025",
+   "source": "documents/documentos_bienestar/2. Resolución CBU No. 002-2025.pdf",
+   "physical_page": 16,
+   "find_text": "Asesora Junfrica y de Contratación",
+   "replace_text": "Asesora Jurídica y de Contratación",
+   "reason": "palabra alterada por OCR (firma superpuesta)",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 5,
+   "find_text": "atencion-<u>al-</u>\n<u>ciudadano/glosario/</u>)",
+   "replace_text": "atencion-al-ciudadano/glosario/)",
+   "reason": "Limpieza de formato: unir URL partida y quitar etiquetas <u> para que la URL sea literal y continua.",
+   "kind": "cosmetic",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 17,
+   "find_text": "6.389.448 (50,6%) son hombres",
+   "replace_text": "6.241.974 (49,4%) son mujeres\n\n6.389.448 (50,6%) son hombres",
+   "reason": "Falta la línea de mujeres de la Ilustración 2.",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 17,
+   "find_text": "2.983.689\n(23,6 %)",
+   "replace_text": "Zona Rural\n2.983.689\n(23,6 %)",
+   "reason": "Etiqueta de zona de la Ilustración 3.",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 17,
+   "find_text": "9.647.733\n(76,4 %)",
+   "replace_text": "Zona Urbana\n9.647.733\n(76,4 %)",
+   "reason": "Etiqueta de zona de la Ilustración 3.",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 18,
+   "find_text": "| GRUPO SIS BEN | 33 |\n| A | 35 |\n| B | 25 |\n| C | 7 |\n| D |  |",
+   "replace_text": "| A | 33% |\n| B | 35% |\n| C | 25% |\n| D | 7% |",
+   "reason": "Emparejamiento verificado por color de porción vs leyenda; GRUPO SISBEN es título. [inferido por color; la leyenda del original incluye «GRUPO SISBEN» como categoría]",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "medium"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 18,
+   "find_text": "| Category | Share (%) |",
+   "replace_text": "| GRUPO SIS BEN | % |",
+   "reason": "Encabezado según leyenda del gráfico. [inferido por color; la leyenda del original incluye «GRUPO SISBEN» como categoría]",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "medium"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 20,
+   "find_text": "| 2010 | 9.89 | 18.15 | 17.9 |",
+   "replace_text": "| 2010 | 9.89 | 22.46 | 18.15 |",
+   "reason": "Valores 2010 verificados con zoom: Técnico 22,46%, Tecnológico 18,15%.",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 21,
+   "find_text": "Técnico o tecnologo",
+   "replace_text": "Técnico o tecnólogo",
+   "reason": "Tilde presente en la imagen.",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 21,
+   "find_text": "1,8%\nSon pobres",
+   "replace_text": "1,8%\nSon pobres\n\nFuente: Cálculos de Prosperidad Social basado en la Gran Encuesta Integrada de Hogares 2019",
+   "reason": "Línea de fuente de la ilustración omitida. [año «2019» leído en imagen de baja resolución; coincide con p22]",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "medium"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 22,
+   "find_text": "<th>Edad</th><th></th><th></th>",
+   "replace_text": "<th>Edad</th><th>Hombres</th><th>Mujeres</th>",
+   "reason": "Sin encabezado no se sabe qué columna es cada sexo; en la imagen son íconos hombre (1ª) y mujer (2ª). [encabezados tomados de íconos, no de texto]",
+   "kind": "editorial",
+   "literal": false,
+   "confidence": "high"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 44,
+   "find_text": "Técnico, Tecnologo y Profesional",
+   "replace_text": "Técnico, Tecnólogo y Profesional",
+   "reason": "Tilde en imagen.",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 44,
+   "find_text": "las habilitidades y competencias",
+   "replace_text": "las habilidades y competencias",
+   "reason": "Errata OCR.",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 44,
+   "find_text": "las habilitidades para la vida",
+   "replace_text": "las habilidades para la vida",
+   "reason": "Errata OCR.",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 44,
+   "find_text": "emprendimiento y educación postgradual de los jóvenes",
+   "replace_text": "emprendimiento y educación post gradual de los jóvenes\nContribuir a la integración de los jóvenes en procesos de acción social, política, ambiental y económica de su territorio",
+   "reason": "Literal \"post gradual\" y objetivo específico omitido.",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 44,
+   "find_text": "promoción de derches",
+   "replace_text": "promoción de derechos",
+   "reason": "Errata OCR.",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 44,
+   "find_text": "ofertas de formación me de capacidades s",
+   "replace_text": "ofertas de fortalecimiento de capacidades",
+   "reason": "Texto inventado; imagen: fortalecimiento.",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 44,
+   "find_text": "empleabilidad, si emprendimiento y la educación postgradual",
+   "replace_text": "empleabilidad, el emprendimiento y la educación post gradual",
+   "reason": "Errata OCR y literal \"post gradual\".",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 44,
+   "find_text": "experienclales",
+   "replace_text": "experienciales",
+   "reason": "Errata OCR.",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 44,
+   "find_text": "construccion de semiliteros",
+   "replace_text": "construcción de semilleros",
+   "reason": "Errata OCR.",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 44,
+   "find_text": "certificacion de participacion",
+   "replace_text": "certificación de participación",
+   "reason": "Tildes presentes en imagen.",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 46,
+   "find_text": "exclusión social al y productiva",
+   "replace_text": "exclusión social y productiva",
+   "reason": "Texto inventado \"al\" (imagen: \"soci al\", separación tipográfica).",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 46,
+   "find_text": "deserción ellos niveles Técnico, Tecnológico",
+   "replace_text": "deserción enlos niveles Técnico, Tecnólogo",
+   "reason": "Literal de la imagen.",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 46,
+   "find_text": "Curaos de formación",
+   "replace_text": "Cursos de formación",
+   "reason": "Errata OCR.",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 46,
+   "find_text": "Acciones que facilitan",
+   "replace_text": "Acciones que faciliten",
+   "reason": "Literal de la imagen.",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 46,
+   "find_text": "oferta de fortalecimiento to de capacidades",
+   "replace_text": "ofertas de fortalecimiento de capacidades",
+   "reason": "Errata OCR.",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 46,
+   "find_text": "construcción de hues de accompañamiento o hacia",
+   "replace_text": "construcción de Rutas de acompañamiento hacia",
+   "reason": "Texto corrupto.",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 46,
+   "find_text": "la educación pool prodicional",
+   "replace_text": "la educación post gradual",
+   "reason": "Texto corrupto.",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 46,
+   "find_text": "Encuentros experientiales (aciciones de solidaridad en el marco del voluntariat 0)",
+   "replace_text": "Encuentros experienciales (acciones de solidaridad en el marco del voluntariado)",
+   "reason": "Texto corrupto.",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 46,
+   "find_text": "construcción de semiliteros",
+   "replace_text": "construcción de semilleros",
+   "reason": "Errata OCR.",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 46,
+   "find_text": "Transfore noja monetaria y constancié de participación en el voluntaría do",
+   "replace_text": "Transferencia monetaria y constancia de participación en el voluntariado",
+   "reason": "Texto corrupto.",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 46,
+   "find_text": "Linea de promoción",
+   "replace_text": "Línea de promoción",
+   "reason": "Tilde en imagen.",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 46,
+   "find_text": "Linea de expansión",
+   "replace_text": "Línea de expansión",
+   "reason": "Tilde en imagen.",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 46,
+   "find_text": "Linea compromiso",
+   "replace_text": "Línea compromiso",
+   "reason": "Tilde en imagen.",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 46,
+   "find_text": "ACTIVIDADES",
+   "replace_text": "ACTIVIDADES\nINSUMOS",
+   "reason": "Etiqueta omitida.",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 54,
+   "find_text": "BPIN 20230000000204",
+   "replace_text": "BPIN 2023000000000204",
+   "reason": "Número BPIN verificado con zoom.",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 54,
+   "find_text": "pobreza vulnerable a nivel",
+   "replace_text": "pobreza o vulnerabilidad a nivel",
+   "reason": "Literal de la imagen.",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 54,
+   "find_text": "billiones",
+   "replace_text": "billones",
+   "reason": "Errata OCR.",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 54,
+   "find_text": "Proyecto de inversion",
+   "replace_text": "Proyecto de inversión",
+   "reason": "Tilde en imagen.",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 54,
+   "find_text": "Ley 2294 de 2023, Plan",
+   "replace_text": "Ley 2294 de 2023. Plan",
+   "reason": "Puntuación literal.",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 54,
+   "find_text": "√ Alcaldas:",
+   "replace_text": "√ Alcaldías:",
+   "reason": "Errata OCR.",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 54,
+   "find_text": "Gestores indigenas",
+   "replace_text": "Gestores indígenas",
+   "reason": "Tilde en imagen.",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 54,
+   "find_text": "√ DMP:",
+   "replace_text": "√ DNP:",
+   "reason": "Sigla correcta en imagen.",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 54,
+   "find_text": "• Modulos de",
+   "replace_text": "• Módulos de",
+   "reason": "Tilde en imagen.",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 54,
+   "find_text": "• Registraduria",
+   "replace_text": "• Registraduría",
+   "reason": "Tilde en imagen.",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 57,
+   "find_text": "11102-\naproximacion",
+   "replace_text": "11102-aproximacion",
+   "reason": "Unir URL partida (guion forma parte de la URL).",
+   "kind": "cosmetic",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 57,
+   "find_text": "preguntasrespuestas",
+   "replace_text": "preguntas-respuestas",
+   "reason": "Guion de la URL perdido en corte de línea.",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 57,
+   "find_text": "empleoinformal-y-seguridadsocial",
+   "replace_text": "empleo-informal-y-seguridad-social",
+   "reason": "Guiones de la URL perdidos en cortes de línea.",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 58,
+   "find_text": "DNP. (2012). *Guía para la Incorporación de la Variable Étnica.*",
+   "replace_text": "DNP. (2012). *Guía para la Incorporación de la Variable Étnica.*\n\nDNP. (2012). *Guía para la Incorporación de la Variable Étnica.*\n\nDNP. (2012). *Guía para la Incorporación de la Variable Étnica.*",
+   "reason": "El original repite la entrada tres veces; restaurar literalidad.",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 58,
+   "find_text": "aspectosrelevantes/\n\nEscuela",
+   "replace_text": "aspectos-relevantes/\n\nEscuela",
+   "reason": "Guion de URL perdido en corte de línea.",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 58,
+   "find_text": "aspectosrelevantes/\n\nEUROSociAL",
+   "replace_text": "aspectos-relevantes/\n\nEUROSociAL",
+   "reason": "Guion de URL perdido en corte de línea.",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 58,
+   "find_text": "fao.org/jointprogramme",
+   "replace_text": "fao.org/joint-programme",
+   "reason": "Guion de URL perdido.",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 58,
+   "find_text": "gender-transformativeapproaches/en",
+   "replace_text": "gender-transformative-approaches/en",
+   "reason": "Guion de URL perdido.",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 59,
+   "find_text": "caracteristicas-yejemplos/",
+   "replace_text": "caracteristicas-y-ejemplos/",
+   "reason": "Guion de URL perdido en corte de línea.",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 59,
+   "find_text": "net/emprendimientoque-es",
+   "replace_text": "net/emprendimiento-que-es",
+   "reason": "Guion de URL perdido en corte de línea.",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 59,
+   "find_text": "En%20el%\n20caso",
+   "replace_text": "En%20el%20caso",
+   "reason": "Unir URL partida en salto de línea (opcional, cosmético).",
+   "kind": "cosmetic",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 61,
+   "find_text": "caracteristicasy-ejemplos/",
+   "replace_text": "caracteristicas-y-ejemplos/",
+   "reason": "Guion de URL perdido en corte de línea.",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 61,
+   "find_text": "que-es-elvoluntariado/",
+   "replace_text": "que-es-el-voluntariado/",
+   "reason": "Guion de URL perdido en corte de línea.",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 61,
+   "find_text": "articles/voluntariadoambiental#",
+   "replace_text": "articles/voluntariado-ambiental#",
+   "reason": "Guion de URL perdido en corte de línea.",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "02-documento-tecnico",
+   "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
+   "physical_page": 61,
+   "find_text": "TMC/Jo\nvenes/",
+   "replace_text": "TMC/Jovenes/",
+   "reason": "Unir URL partida a mitad de palabra (cosmético).",
+   "kind": "cosmetic",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "03-manual-m-ip-36-1of2",
+   "source": "documents/documentos_bienestar/M-IP-36 MANUAL PROGRAMA RENTA JOVEN V1.pdf",
+   "physical_page": 14,
+   "find_text": "| Prosperidad | Departamento Administrativo para la Prosperidad Social |\n| Social |  |",
+   "replace_text": "| Prosperidad Social | Departamento Administrativo para la Prosperidad Social |",
+   "reason": "La sigla 'Prosperidad Social' es una sola celda en el original (salto de línea).",
+   "kind": "cosmetic",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "03-manual-m-ip-36-1of2",
+   "source": "documents/documentos_bienestar/M-IP-36 MANUAL PROGRAMA RENTA JOVEN V1.pdf",
+   "physical_page": 19,
+   "find_text": "operativa y financieras de los programas",
+   "replace_text": "operativa y financiera de los programas",
+   "reason": "El original dice 'financiera' (singular); confirmado también en old.txt.",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "03-manual-m-ip-36-1of2",
+   "source": "documents/documentos_bienestar/M-IP-36 MANUAL PROGRAMA RENTA JOVEN V1.pdf",
+   "physical_page": 27,
+   "find_text": "Lineas\n□ Focalización",
+   "replace_text": "Líneas\n□ Focalización",
+   "reason": "tilde del original",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "03-manual-m-ip-36-1of2",
+   "source": "documents/documentos_bienestar/M-IP-36 MANUAL PROGRAMA RENTA JOVEN V1.pdf",
+   "physical_page": 27,
+   "find_text": "Lineas\n□ Focalización",
+   "replace_text": "Líneas\n[Ciclo Operativo]\n□ Focalización",
+   "reason": "OPCIONAL (no literal): alternativa a la anterior que además rotula el grupo «Ciclo Operativo»; aplicar una u otra, no ambas",
+   "kind": "editorial",
+   "literal": false,
+   "confidence": "high",
+   "optional": true
+  },
+  {
+   "lot": "03-manual-m-ip-36-1of2",
+   "source": "documents/documentos_bienestar/M-IP-36 MANUAL PROGRAMA RENTA JOVEN V1.pdf",
+   "physical_page": 27,
+   "find_text": "□ Inscripcion",
+   "replace_text": "□ Inscripción",
+   "reason": "El original lleva tilde.",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "03-manual-m-ip-36-1of2",
+   "source": "documents/documentos_bienestar/M-IP-36 MANUAL PROGRAMA RENTA JOVEN V1.pdf",
+   "physical_page": 27,
+   "find_text": "□ Verificacion",
+   "replace_text": "□ Verificación",
+   "reason": "El original lleva tilde.",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "03-manual-m-ip-36-1of2",
+   "source": "documents/documentos_bienestar/M-IP-36 MANUAL PROGRAMA RENTA JOVEN V1.pdf",
+   "physical_page": 27,
+   "find_text": "□ Compromiso social para",
+   "replace_text": "[Líneas]\n□ Compromiso social para",
+   "reason": "En la figura estas 3 líneas corresponden al rótulo 'Líneas'.",
+   "kind": "editorial",
+   "literal": false,
+   "confidence": "high",
+   "optional": true
+  },
+  {
+   "lot": "03-manual-m-ip-36-1of2",
+   "source": "documents/documentos_bienestar/M-IP-36 MANUAL PROGRAMA RENTA JOVEN V1.pdf",
+   "physical_page": 28,
+   "find_text": "## 9.4. COMPONENTE DE\n\n## TRANSFERENCIAS\n\n## MONETARIAS\n\n## CONDICIONADAS",
+   "replace_text": "## 9.4. COMPONENTE DE TRANSFERENCIAS MONETARIAS CONDICIONADAS",
+   "reason": "Unifica el título, que en el original es uno solo (justificado).",
+   "kind": "cosmetic",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "03-manual-m-ip-36-1of2",
+   "source": "documents/documentos_bienestar/M-IP-36 MANUAL PROGRAMA RENTA JOVEN V1.pdf",
+   "physical_page": 29,
+   "find_text": "condicionalidades y correspondencias",
+   "replace_text": "condicionalidades y corresponsabilidades",
+   "reason": "El original dice 'corresponsabilidades' (verificado con zoom).",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "03-manual-m-ip-36-1of2",
+   "source": "documents/documentos_bienestar/M-IP-36 MANUAL PROGRAMA RENTA JOVEN V1.pdf",
+   "physical_page": 35,
+   "find_text": "y/o posgados, de acuerdo",
+   "replace_text": "y/o posgrados, de acuerdo",
+   "reason": "El original dice 'posgrados' (zoom y old.txt).",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  },
+  {
+   "lot": "03-manual-m-ip-36-1of2",
+   "source": "documents/documentos_bienestar/M-IP-36 MANUAL PROGRAMA RENTA JOVEN V1.pdf",
+   "physical_page": 35,
+   "find_text": "<td rowspan=\"2\">Especificas</td>",
+   "replace_text": "<td rowspan=\"2\">Específicas</td>",
+   "reason": "El original lleva tilde.",
+   "kind": "substantive",
+   "literal": true,
+   "confidence": "high"
+  }
+ ]
+}
