@@ -292,8 +292,8 @@ falso (forma `{"results": [...]}`) y siembra datos respetando la máquina de
 estados; si falta `infra/d1` (checkout parcial) los tests fallan con un mensaje
 explícito. `tests/test_d1_integration.py` recorre `/answer` completo por
 `build_app` con D1 real, Vectorize falso y un transporte falso que atiende
-embeddings y chat. Nota: `rag.yml` filtra por `apps/rag/**`; un cambio en
-`infra/d1` no dispara el CI del RAG.
+embeddings y chat. `rag.yml` se dispara también con cambios en `infra/d1/**`,
+porque estos tests aplican la migración real.
 
 Arranque local (sin cuenta; Vectorize no tiene emulación local y wrangler
 avisa):
@@ -310,9 +310,9 @@ devuelve `evidence_found` con título, versión, páginas y sección de D1 (FTS5
 `json_each`, conversión de resultados del SDK y `BaseRetriever.ainvoke`
 reales en Pyodide) y `abstained` sin coincidencias.
 
-`tests/test_api_integration.py`
-añade `apps/api/src` al path para cruzar API → binding → RAG; depende del estado
-de `apps/api` y debe migrar a un CI de integración.
+Las pruebas que cruzan API → binding → RAG viven en el proyecto autónomo
+`tests/integration/` (workflow `integration.yml`); `apps/rag` no depende de
+`apps/api`.
 
 ## Dependencias y locks
 

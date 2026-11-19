@@ -1,7 +1,7 @@
 [project]
 name = "unitropico-rag"
 version = "0.1.0"
-description = "PoC local determinista, no un RAG institucional operativo"
+description = "Servicio RAG del agente conversacional de Unitropico"
 requires-python = ">=3.14,<3.15"
 dependencies = [
   "fastapi==0.162.2",
