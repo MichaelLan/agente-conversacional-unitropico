@@ -20,7 +20,7 @@ const items = computed(() => props.citations.map((citation, index) => ({
     aria-label="Fuentes"
     class="mt-3 text-xs text-muted"
   >
-    <ol class="space-y-1">
+    <ol class="lg:space-y-1">
       <li
         v-for="item in items"
         :key="item.key"
@@ -29,11 +29,11 @@ const items = computed(() => props.citations.map((citation, index) => ({
           <template #default="{ open }">
             <button
               type="button"
-              class="group flex max-w-full items-start gap-1.5 rounded-sm text-start hover:text-highlighted focus-visible:outline-2 focus-visible:outline-primary"
+              class="group flex min-h-11 max-w-full items-center gap-1.5 rounded-sm py-1.5 text-start lg:min-h-0 lg:items-start lg:py-0.5 hover:text-highlighted focus-visible:outline-2 focus-visible:outline-primary"
             >
               <UIcon
                 name="i-lucide-chevron-right"
-                class="mt-px size-3.5 shrink-0 transition-transform"
+                class="size-3.5 shrink-0 transition-transform lg:mt-px"
                 :class="{ 'rotate-90': open }"
                 aria-hidden="true"
               />

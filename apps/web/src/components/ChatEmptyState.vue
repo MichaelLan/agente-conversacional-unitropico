@@ -7,7 +7,7 @@ const emit = defineEmits<{ select: [question: string] }>()
 <template>
   <section
     aria-labelledby="bienvenida"
-    class="flex flex-1 flex-col justify-center gap-6 py-10"
+    class="flex flex-1 flex-col justify-end gap-6 py-6 sm:justify-center sm:py-10"
   >
     <div>
       <h2
@@ -32,7 +32,7 @@ const emit = defineEmits<{ select: [question: string] }>()
       >
         <button
           type="button"
-          class="h-full w-full rounded-lg px-3 py-2.5 text-start text-sm text-toned ring ring-default hover:bg-elevated/60 hover:text-highlighted focus-visible:outline-2 focus-visible:outline-primary"
+          class="h-full min-h-11 w-full rounded-lg px-3 py-3 text-start text-sm text-toned ring ring-default hover:bg-elevated/60 hover:text-highlighted focus-visible:outline-2 focus-visible:outline-primary"
           @click="emit('select', question)"
         >
           {{ question }}

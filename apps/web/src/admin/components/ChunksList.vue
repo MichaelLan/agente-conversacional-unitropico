@@ -32,7 +32,7 @@ function onCorrect(chunk: Chunk): void {
   <section aria-labelledby="chunks-title">
     <h3
       id="chunks-title"
-      class="mb-2 text-sm font-semibold text-highlighted"
+      class="sr-only"
     >
       Texto extraído
     </h3>
@@ -63,9 +63,8 @@ function onCorrect(chunk: Chunk): void {
           <UInput
             v-model="query"
             class="min-w-0 flex-1"
-            size="sm"
             icon="i-lucide-search"
-            placeholder="Filtrar en esta página de resultados"
+            placeholder="Filtrar fragmentos"
             aria-label="Filtrar fragmentos cargados"
           />
           <p
@@ -82,35 +81,38 @@ function onCorrect(chunk: Chunk): void {
           Ningún fragmento cargado coincide con el filtro.
         </p>
         <ol
-          class="space-y-3"
+          class="divide-y divide-default rounded-lg ring ring-default"
           :aria-busy="loading"
         >
           <li
             v-for="chunk in visible"
             :key="chunk.id"
-            class="rounded-md border border-default p-3"
+            class="px-4 py-3.5"
           >
-            <p class="mb-1 flex flex-wrap items-center gap-x-2 text-xs text-muted">
-              <span class="font-medium text-default">#{{ chunk.ordinal }}</span>
-              <span>{{ formatPages(chunk.page_start, chunk.page_end) }}</span>
-              <span
-                v-if="chunk.section"
-                class="break-words"
-              >{{ chunk.section }}</span>
-            </p>
-            <p class="whitespace-pre-line break-words text-sm text-default">
+            <div class="mb-1.5 flex items-center gap-2">
+              <p class="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 text-xs text-muted">
+                <span class="font-medium tabular-nums text-default">#{{ chunk.ordinal }}</span>
+                <span>{{ formatPages(chunk.page_start, chunk.page_end) }}</span>
+                <span
+                  v-if="chunk.section"
+                  class="wrap-break-word"
+                >· {{ chunk.section }}</span>
+              </p>
+              <UButton
+                v-if="canCorrect"
+                size="xs"
+                color="neutral"
+                variant="ghost"
+                icon="i-lucide-pencil-line"
+                class="-me-2 min-h-11 shrink-0 sm:min-h-0"
+                label="Corregir"
+                aria-label="Corregir texto de este fragmento"
+                @click="onCorrect(chunk)"
+              />
+            </div>
+            <p class="max-w-prose whitespace-pre-line wrap-break-word text-[0.9375rem]/7 text-default">
               {{ chunk.text }}
             </p>
-            <UButton
-              v-if="canCorrect"
-              class="mt-2"
-              size="xs"
-              color="neutral"
-              variant="outline"
-              icon="i-lucide-pencil-line"
-              label="Corregir texto de este fragmento"
-              @click="onCorrect(chunk)"
-            />
           </li>
         </ol>
         <div class="mt-3 flex items-center justify-between gap-2">
@@ -118,6 +120,7 @@ function onCorrect(chunk: Chunk): void {
             size="sm"
             color="neutral"
             variant="outline"
+            class="min-h-11 sm:min-h-0"
             icon="i-lucide-chevron-left"
             label="Anterior"
             :disabled="!hasPrev || loading"
@@ -127,6 +130,7 @@ function onCorrect(chunk: Chunk): void {
             size="sm"
             color="neutral"
             variant="outline"
+            class="min-h-11 sm:min-h-0"
             trailing-icon="i-lucide-chevron-right"
             label="Siguiente"
             :disabled="!hasNext || loading"

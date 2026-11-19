@@ -25,11 +25,11 @@ const collapsed = defineModel<boolean>('collapsed', { default: false })
     v-model:open="open"
     v-model:collapsed="collapsed"
     collapsible
-    :default-size="17"
+    :default-size="18"
     :min-size="15"
     :max-size="20"
     :collapsed-size="4"
-    :ui="{ root: 'border-e-0', body: 'gap-5 pb-4', header: 'gap-2' }"
+    :ui="{ root: 'border-e-0', body: 'gap-5 pb-4', header: 'gap-2', toggle: '-ms-1.5 size-11 justify-center' }"
   >
     <template #header="{ collapsed: isCollapsed }">
       <UIcon
@@ -68,7 +68,7 @@ const collapsed = defineModel<boolean>('collapsed', { default: false })
         label="Nueva conversación"
         color="neutral"
         variant="ghost"
-        class="-mx-2.5 justify-start"
+        class="-mx-2.5 min-h-11 justify-start lg:min-h-0"
         @click="emit('reset')"
       />
 
@@ -97,7 +97,7 @@ const collapsed = defineModel<boolean>('collapsed', { default: false })
                 type="button"
                 :title="question"
                 :aria-current="question === active ? 'true' : undefined"
-                class="-mx-2 block w-[calc(100%+1rem)] truncate rounded-md px-2 py-1.5 text-start text-sm text-muted hover:bg-elevated hover:text-highlighted focus-visible:outline-2 focus-visible:outline-primary aria-[current=true]:bg-primary/10 aria-[current=true]:text-primary"
+                class="-mx-2 block min-h-11 w-[calc(100%+1rem)] truncate rounded-md px-2 py-3 text-start lg:min-h-0 lg:py-1.5 text-sm text-muted hover:bg-elevated hover:text-highlighted focus-visible:outline-2 focus-visible:outline-primary aria-[current=true]:bg-primary/10 aria-[current=true]:text-primary"
                 @click="emit('select', question)"
               >
                 {{ question }}

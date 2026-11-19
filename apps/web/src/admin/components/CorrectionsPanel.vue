@@ -4,6 +4,8 @@ import UAlert from '@nuxt/ui/components/Alert.vue'
 import UButton from '@nuxt/ui/components/Button.vue'
 import UInput from '@nuxt/ui/components/Input.vue'
 import UTextarea from '@nuxt/ui/components/Textarea.vue'
+import UIcon from '@nuxt/ui/components/Icon.vue'
+import UBadge from '@nuxt/ui/components/Badge.vue'
 import {
   FIND_MAX, MATCH_RULE_HELP, PUBLISHED_BLOCK_MESSAGE, REASON_MAX, REPLACE_MAX,
   draftToInput, emptyDraft, sortCorrections, validateDraft,
@@ -74,7 +76,7 @@ const shown = (key: keyof CorrectionDraft): string | undefined => (submitted.val
   >
     <h3
       id="corrections-title"
-      class="text-sm font-semibold text-highlighted"
+      class="sr-only"
     >
       Correcciones
     </h3>
@@ -126,59 +128,70 @@ const shown = (key: keyof CorrectionDraft): string | undefined => (submitted.val
     </p>
     <ul
       v-else
-      class="space-y-2"
+      class="divide-y divide-default rounded-lg ring ring-default"
     >
       <li
         v-for="item in sorted"
         :key="item.id"
-        class="rounded-md border border-default p-3 text-sm"
-        :class="item.active ? '' : 'opacity-60'"
+        class="space-y-2 px-4 py-3.5 text-sm"
       >
-        <p class="mb-1 flex flex-wrap items-center gap-x-2 text-xs text-muted">
+        <p class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
           <span class="font-medium text-default">p. {{ item.page_number }}</span>
-          <span>{{ item.id }}</span>
+          <UBadge
+            :color="item.active ? 'primary' : 'neutral'"
+            variant="soft"
+            size="sm"
+            :label="item.active ? 'Activa' : 'Borrada'"
+          />
           <span>Creada {{ formatTimestamp(item.created_at) }}</span>
-          <span v-if="item.deleted_at">Borrada {{ formatTimestamp(item.deleted_at) }}</span>
-          <span v-else>Activa</span>
+          <span v-if="item.deleted_at">· Borrada {{ formatTimestamp(item.deleted_at) }}</span>
+          <span class="font-mono text-[0.7rem] text-muted">{{ item.id }}</span>
         </p>
-        <p class="whitespace-pre-line break-words">
-          <span class="font-mono">{{ item.find_text }}</span>
-          →
+        <p
+          class="flex flex-wrap items-center gap-2 wrap-break-word"
+          :class="item.active ? '' : 'opacity-70'"
+        >
+          <span class="rounded bg-error/10 px-1.5 py-0.5 font-mono text-[0.8125rem] text-highlighted line-through decoration-error/60">{{ item.find_text }}</span>
+          <UIcon
+            name="i-lucide-arrow-right"
+            class="size-3.5 shrink-0 text-muted"
+            aria-hidden="true"
+          />
+          <span class="sr-only">se reemplaza por</span>
           <span
             v-if="item.replace_text === ''"
             class="italic text-muted"
           >(eliminar)</span>
           <span
             v-else
-            class="font-mono"
+            class="rounded bg-primary/10 px-1.5 py-0.5 font-mono text-[0.8125rem] text-highlighted"
           >{{ item.replace_text }}</span>
         </p>
-        <p class="break-words text-muted">
+        <p class="wrap-break-word text-muted">
           Motivo: {{ item.reason }}
         </p>
-        <div
-          v-if="item.active"
-          class="mt-2"
-        >
+        <div v-if="item.active">
           <UButton
             v-if="confirming !== item.id"
             size="xs"
             color="error"
-            variant="outline"
+            variant="ghost"
             icon="i-lucide-trash-2"
             label="Borrar"
+            class="-ms-2 min-h-11 sm:min-h-0"
             :disabled="disabled"
             @click="confirming = item.id"
           />
           <div
             v-else
-            class="flex flex-wrap items-center gap-2"
+            class="flex flex-wrap items-center gap-2 rounded-md bg-error/5 p-2"
           >
-            <span class="text-xs">¿Borrar esta corrección? La versión volverá a revisión.</span>
+            <span class="text-xs text-default">¿Borrar esta corrección? La versión volverá a revisión.</span>
             <UButton
               size="xs"
               color="error"
               label="Sí, borrar"
+              class="min-h-11 sm:min-h-0"
               :disabled="disabled"
               @click="emit('remove', item.id)"
             />
@@ -187,6 +200,7 @@ const shown = (key: keyof CorrectionDraft): string | undefined => (submitted.val
               color="neutral"
               variant="ghost"
               label="Cancelar"
+              class="min-h-11 sm:min-h-0"
               @click="confirming = null"
             />
           </div>
@@ -195,7 +209,7 @@ const shown = (key: keyof CorrectionDraft): string | undefined => (submitted.val
     </ul>
 
     <form
-      class="space-y-3"
+      class="space-y-4 rounded-lg bg-elevated/40 p-4 ring ring-default"
       novalidate
       @submit.prevent="submit"
     >
@@ -206,11 +220,11 @@ const shown = (key: keyof CorrectionDraft): string | undefined => (submitted.val
         {{ MATCH_RULE_HELP }}
       </p>
       <label class="block text-sm">
-        <span class="mb-1 block text-muted">Página</span>
+        <span class="mb-1 block font-medium text-default">Página</span>
         <select
           v-if="pages.length > 1"
           v-model="draft.page_number"
-          class="w-full rounded-md border border-default bg-default px-2 py-1.5 text-sm"
+          class="min-h-11 w-full rounded-md bg-default px-2.5 text-base ring ring-accented focus-visible:outline-2 focus-visible:outline-primary sm:min-h-9 sm:text-sm"
           :disabled="disabled"
         >
           <option
@@ -236,7 +250,7 @@ const shown = (key: keyof CorrectionDraft): string | undefined => (submitted.val
         >{{ shown('page_number') }}</span>
       </label>
       <label class="block text-sm">
-        <span class="mb-1 block text-muted">Texto a buscar ({{ draft.find_text.length }}/{{ FIND_MAX }})</span>
+        <span class="mb-1 block font-medium text-default">Texto a buscar ({{ draft.find_text.length }}/{{ FIND_MAX }})</span>
         <UTextarea
           v-model="draft.find_text"
           class="w-full"
@@ -250,7 +264,7 @@ const shown = (key: keyof CorrectionDraft): string | undefined => (submitted.val
         >{{ shown('find_text') }}</span>
       </label>
       <label class="block text-sm">
-        <span class="mb-1 block text-muted">Reemplazo ({{ draft.replace_text.length }}/{{ REPLACE_MAX }}; vacío elimina el texto)</span>
+        <span class="mb-1 block font-medium text-default">Reemplazo ({{ draft.replace_text.length }}/{{ REPLACE_MAX }}; vacío elimina el texto)</span>
         <UTextarea
           v-model="draft.replace_text"
           class="w-full"
@@ -263,7 +277,7 @@ const shown = (key: keyof CorrectionDraft): string | undefined => (submitted.val
         >{{ shown('replace_text') }}</span>
       </label>
       <label class="block text-sm">
-        <span class="mb-1 block text-muted">Motivo ({{ draft.reason.length }}/{{ REASON_MAX }})</span>
+        <span class="mb-1 block font-medium text-default">Motivo ({{ draft.reason.length }}/{{ REASON_MAX }})</span>
         <UInput
           v-model="draft.reason"
           class="w-full"
@@ -284,7 +298,8 @@ const shown = (key: keyof CorrectionDraft): string | undefined => (submitted.val
       />
       <UButton
         type="submit"
-        size="sm"
+        color="neutral"
+        class="min-h-11 sm:min-h-0"
         label="Crear corrección"
         :loading="submitting"
         :disabled="disabled"

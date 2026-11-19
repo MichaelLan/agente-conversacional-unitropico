@@ -15,6 +15,7 @@
   color-scheme: light;
   --ui-primary: var(--ui-color-primary-700);
   --ui-text-muted: var(--ui-color-neutral-600);
+  --ui-warning: var(--ui-color-warning-700);
   --ui-radius: 0.375rem;
 }
 
@@ -24,4 +25,27 @@ body {
   font-family: var(--font-sans);
   background: var(--ui-bg-muted);
   color: var(--ui-text);
+}
+
+/*
+ * Mobile first: en pantallas estrechas los campos de formulario miden al menos
+ * 44 px de alto (objetivo táctil). Desde `sm` recuperan su tamaño compacto.
+ * Los inputs de Nuxt UI (tamaño md) ya usan 16 px, lo que evita el zoom de iOS.
+ */
+@layer base {
+  input:not([type="checkbox"], [type="radio"], [type="file"], [type="hidden"]),
+  textarea,
+  select,
+  button[role="combobox"] {
+    min-height: 2.75rem;
+  }
+
+  @media (min-width: 40rem) {
+    input:not([type="checkbox"], [type="radio"], [type="file"], [type="hidden"]),
+    textarea,
+    select,
+    button[role="combobox"] {
+      min-height: 0;
+    }
+  }
 }

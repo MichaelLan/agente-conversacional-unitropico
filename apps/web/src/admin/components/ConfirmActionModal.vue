@@ -39,14 +39,17 @@ const stuckWarning = computed(() =>
       </p>
     </template>
     <template #footer>
-      <div class="flex w-full justify-end gap-2">
+      <div class="flex w-full flex-col-reverse gap-2 sm:flex-row sm:justify-end">
         <UButton
           color="neutral"
           variant="outline"
           label="Cancelar"
+          class="min-h-11 justify-center sm:min-h-0"
           @click="open = false"
         />
         <UButton
+          color="neutral"
+          class="min-h-11 justify-center sm:min-h-0"
           :label="action ? ACTION_LABELS[action] : 'Confirmar'"
           @click="emit('confirm')"
         />

@@ -9,7 +9,7 @@ const read = path => readFile(path, 'utf8')
 const adminSfcs = ['AdminApp.vue', 'components/AdminPanel.vue', 'components/LoginPanel.vue', 'components/DocumentsTable.vue',
   'components/UploadModal.vue', 'components/ConfirmActionModal.vue', 'components/VersionDetailSlideover.vue',
   'components/MetadataForm.vue', 'components/StatusBadge.vue', 'components/ChunksList.vue',
-  'components/CorrectionsPanel.vue', 'components/VersionReviewPanel.vue']
+  'components/CorrectionsPanel.vue', 'components/VersionReviewPanel.vue', 'components/AdminSidebar.vue']
 
 test('new admin SFCs compile', async () => {
   for (const name of adminSfcs) {
@@ -51,7 +51,8 @@ test('admin entry exists, build input lists both pages, chat does not link to /a
 test('login states the real protection is server-side; sign-out and confirmations exist', async () => {
   assert.match(await read(join(srcRoot, 'admin/components/LoginPanel.vue')), /lo decide el servidor/)
   const panel = await read(join(srcRoot, 'admin/components/AdminPanel.vue'))
-  assert.match(panel, /Cerrar sesión/)
+  assert.match(await read(join(srcRoot, 'admin/components/AdminSidebar.vue')), /Cerrar sesión/)
+  assert.match(panel, /<AdminSidebar[\s\S]*?@sign-out="session\.signOut\(\)"/)
   assert.match(panel, /aria-live="polite"/)
   assert.match(panel, /<ConfirmActionModal/)
   assert.match(await read(join(srcRoot, 'admin/components/DocumentsTable.vue')), /overflow|min-w-0/)

@@ -21,11 +21,11 @@ export const STATUS_LABELS: Readonly<Record<VersionStatus, string>> = {
 export type BadgeColor = 'info' | 'warning' | 'primary' | 'success' | 'neutral' | 'error'
 
 export const STATUS_COLORS: Readonly<Record<VersionStatus, BadgeColor>> = {
-  uploaded: 'info',
-  processing: 'info',
-  extracted: 'info',
+  uploaded: 'neutral',
+  processing: 'neutral',
+  extracted: 'neutral',
   review_required: 'warning',
-  ready: 'primary',
+  ready: 'info',
   published: 'success',
   unpublished: 'neutral',
   failed: 'error',
@@ -133,4 +133,40 @@ export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+/** Filtros de la barra lateral: agrupan estados para una lectura rápida. */
+export type StatusFilter = 'all' | 'in_progress' | 'review' | 'ready' | 'published' | 'failed'
+
+export const STATUS_FILTERS: readonly { id: StatusFilter; label: string; icon: string; statuses: readonly VersionStatus[] | null }[] = [
+  { id: 'all', label: 'Todos', icon: 'i-lucide-files', statuses: null },
+  { id: 'in_progress', label: 'En proceso', icon: 'i-lucide-loader', statuses: ['uploaded', 'processing', 'extracted'] },
+  { id: 'review', label: 'En revisión', icon: 'i-lucide-eye', statuses: ['review_required'] },
+  { id: 'ready', label: 'Listos', icon: 'i-lucide-circle-check', statuses: ['ready'] },
+  { id: 'published', label: 'Publicados', icon: 'i-lucide-globe', statuses: ['published'] },
+  { id: 'failed', label: 'Con error', icon: 'i-lucide-circle-alert', statuses: ['failed'] },
+]
+
+export function matchesFilter(status: VersionStatus, filter: StatusFilter): boolean {
+  const statuses = STATUS_FILTERS.find(item => item.id === filter)?.statuses ?? null
+  return statuses === null || statuses.includes(status)
+}
+
+export function countByFilter(rows: readonly VersionRow[]): Record<StatusFilter, number> {
+  const counts = Object.fromEntries(STATUS_FILTERS.map(item => [item.id, 0])) as Record<StatusFilter, number>
+  for (const row of rows) {
+    for (const item of STATUS_FILTERS) if (matchesFilter(row.version.status, item.id)) counts[item.id] += 1
+  }
+  return counts
+}
+
+/** Agrupa filas planas por documento conservando el orden de llegada. */
+export function groupByDocument(rows: readonly VersionRow[]): { document: VersionRow['document']; rows: VersionRow[] }[] {
+  const groups = new Map<string, { document: VersionRow['document']; rows: VersionRow[] }>()
+  for (const row of rows) {
+    const group = groups.get(row.document.id)
+    if (group) group.rows.push(row)
+    else groups.set(row.document.id, { document: row.document, rows: [row] })
+  }
+  return [...groups.values()]
 }

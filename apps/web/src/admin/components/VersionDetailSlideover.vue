@@ -4,6 +4,8 @@ import USlideover from '@nuxt/ui/components/Slideover.vue'
 import UAlert from '@nuxt/ui/components/Alert.vue'
 import UButton from '@nuxt/ui/components/Button.vue'
 import USkeleton from '@nuxt/ui/components/Skeleton.vue'
+import UTabs from '@nuxt/ui/components/Tabs.vue'
+import { DETAIL_SLIDEOVER_UI } from '../lib/ui'
 import MetadataForm from './MetadataForm.vue'
 import VersionReviewPanel from './VersionReviewPanel.vue'
 import StatusBadge from './StatusBadge.vue'
@@ -29,7 +31,15 @@ const open = defineModel<boolean>('open', { required: true })
 const emit = defineEmits<{ save: [patch: VersionPatch]; action: [action: VersionAction]; changed: [id: string] }>()
 
 type Tab = 'summary' | 'text' | 'corrections'
-const TABS: readonly [Tab, string][] = [['summary', 'Resumen'], ['text', 'Texto extraído'], ['corrections', 'Correcciones']]
+const TABS = [
+  { value: 'summary', label: 'Resumen' },
+  { value: 'text', label: 'Texto extraído' },
+  { value: 'corrections', label: 'Correcciones' },
+] satisfies { value: Tab; label: string }[]
+const isTab = (value: unknown): value is Tab => TABS.some(item => item.value === value)
+function selectTab(value: string | number): void {
+  if (isTab(value)) tab.value = value
+}
 const tab = ref<Tab>('summary')
 watch(() => props.detail?.version.id, () => { tab.value = 'summary' })
 const reviewSection = (): 'text' | 'corrections' => (tab.value === 'text' ? 'text' : 'corrections')
@@ -58,7 +68,6 @@ function rows(): [string, string][] {
   const { document, version } = props.detail ?? {}
   if (!document || !version) return []
   return [
-    ['Documento', document.title],
     ['Tipo', documentTypeLabel(document.document_type)],
     ['Versión', version.version_label ?? '—'],
     ['Revisión pendiente', version.requires_review ? 'Sí' : 'No'],
@@ -80,7 +89,8 @@ function rows(): [string, string][] {
   <USlideover
     v-model:open="open"
     :title="detail ? detail.document.title : 'Detalle de versión'"
-    description="Metadatos, errores y registro de procesamiento."
+    :description="detail ? `Versión ${detail.version.version_label ?? 'sin etiqueta'} · ${documentTypeLabel(detail.document.document_type)}` : 'Metadatos, errores y registro de procesamiento.'"
+    :ui="DETAIL_SLIDEOVER_UI"
   >
     <template #body>
       <div
@@ -116,43 +126,46 @@ function rows(): [string, string][] {
         >
           <div class="flex flex-wrap items-center gap-2">
             <StatusBadge :status="detail.version.status" />
-            <UButton
-              size="sm"
-              color="neutral"
-              variant="outline"
-              icon="i-lucide-pencil"
-              label="Editar metadatos"
-              :disabled="busy"
-              @click="editing = true"
-            />
-            <UButton
-              v-for="action in allowedActions(detail.version)"
-              :key="action"
-              size="sm"
-              color="neutral"
-              variant="outline"
-              :label="ACTION_LABELS[action]"
-              :disabled="busy"
-              @click="emit('action', action)"
-            />
+            <span
+              v-if="detail.version.requires_review"
+              class="text-xs text-muted"
+            >Revisión pendiente</span>
+            <div class="flex w-full flex-wrap gap-2 sm:ms-auto sm:w-auto">
+              <UButton
+                color="neutral"
+                variant="outline"
+                icon="i-lucide-pencil"
+                label="Editar metadatos"
+                class="min-h-11 sm:min-h-0"
+                size="sm"
+                :disabled="busy"
+                @click="editing = true"
+              />
+              <UButton
+                v-for="action in allowedActions(detail.version)"
+                :key="action"
+                size="sm"
+                color="neutral"
+                :variant="action === 'publish' ? 'solid' : 'outline'"
+                class="min-h-11 sm:min-h-0"
+                :label="ACTION_LABELS[action]"
+                :disabled="busy"
+                @click="emit('action', action)"
+              />
+            </div>
           </div>
 
-          <div
-            class="flex flex-wrap gap-1"
-            role="group"
+          <UTabs
+            :model-value="tab"
+            :items="TABS"
+            :content="false"
+            variant="link"
+            color="neutral"
             aria-label="Secciones del detalle"
-          >
-            <UButton
-              v-for="[id, label] in TABS"
-              :key="id"
-              size="sm"
-              color="neutral"
-              :variant="tab === id ? 'solid' : 'ghost'"
-              :label="label"
-              :aria-pressed="tab === id"
-              @click="tab = id"
-            />
-          </div>
+            class="-mx-4 sm:-mx-6"
+            :ui="{ list: 'px-4 sm:px-6', trigger: 'min-h-11 sm:min-h-0 shrink-0' }"
+            @update:model-value="selectTab"
+          />
 
           <VersionReviewPanel
             v-if="tab !== 'summary' || reviewVisited"
@@ -195,18 +208,22 @@ function rows(): [string, string][] {
               </template>
             </UAlert>
 
-            <dl class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm">
-              <template
+            <dl class="divide-y divide-default rounded-lg text-sm ring ring-default">
+              <div
                 v-for="[label, value] in rows()"
                 :key="label"
+                class="grid gap-0.5 px-3 py-2.5 sm:grid-cols-[11rem_minmax(0,1fr)] sm:gap-4"
               >
                 <dt class="text-muted">
                   {{ label }}
                 </dt>
-                <dd class="break-words text-default">
+                <dd
+                  class="text-default"
+                  :class="label === 'SHA-256' || label === 'Sustituye a' ? 'break-all font-mono text-xs leading-5' : 'wrap-break-word'"
+                >
                   {{ value }}
                 </dd>
-              </template>
+              </div>
             </dl>
 
             <section aria-labelledby="workflow-title">
@@ -262,7 +279,7 @@ function rows(): [string, string][] {
               </p>
               <ol
                 v-else
-                class="space-y-2 border-s border-default ps-4"
+                class="space-y-3 border-s border-default ps-4"
               >
                 <li
                   v-for="event in detail.processing_events"

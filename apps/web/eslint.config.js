@@ -24,4 +24,11 @@ export default ts.config(
       globals: { Request: 'readonly', Response: 'readonly', URL: 'readonly', Headers: 'readonly' },
     },
   },
+  {
+    // Plantilla del service worker (JS plano) y su test.
+    files: ['pwa/**/*.js', 'tests/pwa.test.mjs'],
+    languageOptions: {
+      globals: { self: 'readonly', caches: 'readonly', fetch: 'readonly', Request: 'readonly', Response: 'readonly', URL: 'readonly' },
+    },
+  },
 )

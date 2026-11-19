@@ -150,16 +150,19 @@ function submit(): void {
         description="No hay cambios que guardar."
       />
     </div>
-    <div class="flex justify-end gap-2">
+    <div class="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
       <UButton
         color="neutral"
         variant="outline"
         label="Cancelar"
+        class="min-h-11 justify-center sm:min-h-0"
         :disabled="saving"
         @click="emit('cancel')"
       />
       <UButton
         type="submit"
+        color="neutral"
+        class="min-h-11 justify-center sm:min-h-0"
         label="Guardar cambios"
         :loading="saving"
       />

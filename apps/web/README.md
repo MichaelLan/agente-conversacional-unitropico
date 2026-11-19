@@ -10,7 +10,8 @@ derivación del backend y errores con «Reintentar». No incluyas datos personal
 
 - Hecho: chat en memoria, barra lateral de preguntas frecuentes, estado vacío
   con sugerencias, citas expandibles, abstención, 503/errores con reintento,
-  cancelación, accesibilidad básica, responsive (sidebar deslizante en móvil).
+  cancelación, accesibilidad básica, **mobile first** (sidebar deslizante en
+  móvil, objetivos táctiles ≥ 44 px, zonas seguras) e **instalable (PWA)**.
 - **Las preguntas frecuentes son de ejemplo** (`src/data/faq.ts`,
   `FAQ_IS_PLACEHOLDER = true`): solo preguntas genéricas, sin respuestas ni datos
   institucionales. La interfaz muestra «Preguntas de ejemplo en revisión» hasta
@@ -70,6 +71,7 @@ pnpm lint && pnpm typecheck && pnpm test && pnpm build
 ```
 src/
   App.vue                     UApp (locale es) + UDashboardGroup, skip link
+  lib/pwa.ts                  registro del service worker (solo producción)
   components/
     FaqSidebar.vue            UDashboardSidebar: título, colapsar, nueva conversación, FAQs
     ChatPanel.vue             UDashboardPanel: encabezado, mensajes, prompt, aria-live
@@ -84,6 +86,8 @@ src/
   types/chat.ts               tipos manuales del contrato y de los mensajes
   data/faq.ts                 preguntas de ejemplo (placeholder)
   assets/main.css             Tailwind + Nuxt UI, ajustes de tono para contraste
+pwa/sw.js                     plantilla del service worker (el build emite dist/sw.js y dist/admin/sw.js)
+public/manifest.webmanifest   manifest del chat (+ public/admin/manifest.webmanifest, iconos, offline.html)
 worker/index.js               Worker de despliegue: proxy /api/* -> service binding API
 public/_headers               cabeceras de seguridad de los Static Assets
 wrangler.jsonc                Worker unitropico-web (assets dist/, run_worker_first /api/*)
@@ -91,12 +95,77 @@ tests/                        node:test; support/load.mjs transpila src/*.ts con
 ```
 
 Tema: claro único; `primary: green`, `neutral: slate` en `vite.config.ts`
-(`ui.colors`); `main.css` sube `--ui-primary` al tono 700 y `--ui-text-muted` al
-600 para contraste AA. Tipografía del sistema, sin fuentes externas.
+(`ui.colors`); `main.css` sube `--ui-primary` y `--ui-warning` al tono 700 y
+`--ui-text-muted` al 600 para contraste AA. Tipografía del sistema, sin fuentes
+externas. Chat y panel comparten el mismo lenguaje: fondo `bg-muted`, barra
+lateral sin borde sobre el fondo, panel blanco con `ring` y esquinas redondeadas
+(desde `lg`), acciones principales en botón oscuro (`color="neutral"`) y un único
+acento verde.
+
+### Mobile first
+
+Estilos base pensados para 360–430 px y ampliados con `sm:`/`md:`/`lg:`:
+objetivos táctiles ≥ 44 px en móvil (`min-h-11`, compactos desde `sm`/`lg`),
+campos de formulario ≥ 44 px y 16 px de texto (sin zoom de iOS; regla base en
+`main.css`), `viewport-fit=cover` + `env(safe-area-inset-*)` en prompt, barras y
+pies, `h-dvh` en los contenedores (el teclado virtual no tapa el prompt) y nada
+que dependa solo de hover. En el chat el estado vacío se apoya abajo, junto al
+prompt. En el admin, por debajo de `md` la tabla pasa a tarjetas apiladas por
+documento con estado y menú de acciones a mano; subir documento es un modal a
+pantalla completa en móvil (`lib/ui.ts`) y el detalle/edición un slideover a
+pantalla completa.
+
+### Instalable (PWA, sin dependencias)
+
+- Manifests: `public/manifest.webmanifest` (scope `/`) y
+  `public/admin/manifest.webmanifest` (scope `/admin/`, propio), `display:
+  standalone`, iconos PNG 192/512 + maskable 512 y `apple-touch-icon` 180 en
+  `public/icons/` y `public/admin/icons/` (burbuja genérica en el verde primario
+  sobre fondo claro; fuente `icon.svg`, PNG renderizados con Chromium). Metas
+  `theme-color`, `mobile-web-app-capable`, `apple-mobile-web-app-*`.
+- Service worker escrito a mano: plantilla `pwa/sw.js`; el plugin `pwaPlugin`
+  de `vite.config.ts` (solo `build`) emite `dist/sw.js` y `dist/admin/sw.js` con
+  la lista de precache (página sin conexión, manifest, iconos y los JS/CSS con
+  hash que referencia cada HTML) y una versión de caché derivada del contenido.
+  Navegaciones: red primero, sin red `offline.html` («Sin conexión: el asistente
+  necesita internet»). Assets con hash: caché primero. **`/api/*` nunca pasa por
+  el SW** (no llama a `respondWith`, va a la red), ni peticiones no GET ni de
+  otros orígenes; no guarda tokens ni respuestas del chat/admin. El SW del chat
+  ignora `/admin/`.
+- Registro solo en producción (`src/lib/pwa.ts`, `import.meta.env.PROD`,
+  `updateViaCache: 'none'`). Actualización segura: sin `skipWaiting`; el SW nuevo
+  espera a que se cierren las pestañas con el anterior y al activarse borra las
+  cachés `unitropico-shell:<scope>:*` de otras versiones.
+- `_headers`: CSP con `worker-src 'self'` y `manifest-src 'self'`; `/sw.js` y
+  `/manifest.webmanifest` con `Cache-Control: no-cache` (lo de `/admin/*` ya es
+  `no-store`). El Worker del proxy no cambia: SW y manifest son Static Assets.
+- Verificación (build + `pnpm preview` con API falsa, Playwright): ambos SW se
+  registran con su scope, `Page.getInstallabilityErrors` = `[]`, las respuestas
+  `/api/chat` y `/api/admin/documents` no salen del SW (`fromServiceWorker=false`),
+  ninguna entrada `/api` ni el token en Cache Storage, y sin red aparece la página
+  sin conexión.
+
+Criterios de instalabilidad consultados (noviembre de 2026):
+
+- Chrome ([web.dev, «What does it take to be installable?»](https://web.dev/articles/install-criteria)):
+  HTTPS, manifest con `name`/`short_name`, iconos 192 y 512, `start_url`,
+  `display` (`standalone`, `fullscreen`, `minimal-ui` o
+  `window-controls-overlay`), `prefer_related_applications` ausente o `false`,
+  y para el aviso automático interacción del usuario (un clic y 30 s).
+- MDN ([Making PWAs installable](https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps/Guides/Making_PWAs_installable)):
+  manifest enlazado en cada página, origen seguro (o `localhost`); el service
+  worker no es requisito de instalación; en iOS ≥ 16.4 se instala desde el menú
+  Compartir de Safari, Chrome, Edge, Firefox u Orion; `beforeinstallprompt` no
+  existe en iOS.
+- Apple/WebKit ([Web Push for Web Apps on iOS and iPadOS](https://webkit.org/blog/13878/web-push-for-web-apps-on-ios-and-ipados/)
+  y [Configuring Web Applications](https://developer.apple.com/library/archive/documentation/AppleApplications/Reference/SafariWebContent/ConfiguringWebApplications/ConfiguringWebApplications.html)):
+  una web con manifest y `display` `standalone`/`fullscreen` se abre como app
+  de pantalla de inicio; `apple-touch-icon` tiene prioridad sobre los iconos del
+  manifest; `apple-mobile-web-app-capable` y `apple-mobile-web-app-status-bar-style`.
 
 ## Pruebas
 
-60 pruebas `node:test` (chat, admin y Worker): validación del contrato (válidos, invariantes rotas,
+77 pruebas `node:test` (chat, admin, PWA y Worker): validación del contrato (válidos, invariantes rotas,
 429 rate_limited, 502/503, basura, claves extra), petición enviada, saneado de errores, timeout vs
 cancelación, historial acotado y recortado, transiciones
 send→answered/abstained/error/cancelada y reintento, una sola consulta en curso,
@@ -110,8 +179,10 @@ estática de ausencia de `v-html`, `innerHTML`, web storage, `console` y `any`; 
   no añadir dependencias. Sin red a ese dominio los iconos no se ven (los botones
   conservan etiqueta o `aria-label`). Opciones: añadir la colección y
   `icon.clientBundle`, o servir SVG propios.
-- No verificado: render visual en navegador, lectores de pantalla, contraste
-  medido con herramienta, 360 px reales, integración real con la API/RAG.
+- Verificado con Playwright (Chromium 1223, API falsa local, capturas a 360×740,
+  390×844 y 1440×900) y Lighthouse 11.7.1 (accesibilidad, buenas prácticas y PWA
+  = 1 en `/` y en el login de `/admin/`). No verificado: lectores de pantalla,
+  dispositivos iOS/Android reales, integración real con la API/RAG.
 - Las preguntas frecuentes no están validadas por la institución.
 - Despliegue preparado (`wrangler.jsonc`, `worker/`) pero **no ejecutado**.
 
@@ -225,6 +296,15 @@ App Vite multipágina sin router: `admin/index.html` → `src/admin/main.ts` →
   (`ready`/`unpublished` con revisión resuelta), Despublicar (`published`),
   Reprocesar (`uploaded`, `failed`, `review_required`, `ready`, `unpublished`),
   siempre con confirmación y toast.
+- **Diseño**: misma familia que el chat. `AdminSidebar` (colapsable; panel
+  deslizante en móvil): icono + «Administración», «Subir documento», filtros por
+  estado como lista simple con contadores (`lib/versions.ts › STATUS_FILTERS`:
+  Todos, En proceso, En revisión, Listos, Publicados, Con error) y «Cerrar sesión»
+  abajo. Panel con encabezado discreto (vista + Actualizar). Tabla (`md+`) con
+  versiones agrupadas bajo su documento (`groupByDocument`) y menú de acciones por
+  fila (`UDropdownMenu`: Ver detalle, Publicar/Despublicar/Reprocesar); en móvil,
+  tarjetas apiladas. Estados en `UBadge` subtle (neutral en proceso, info listo,
+  success publicado, warning revisión, error fallido). Detalle con `UTabs`.
 - Sin dependencias nuevas (lockfile intacto). Tests: `tests/admin-*.test.mjs`.
 
 ### Revisión de texto y correcciones OCR

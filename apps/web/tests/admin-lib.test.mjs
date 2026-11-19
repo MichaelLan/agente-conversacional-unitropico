@@ -87,3 +87,21 @@ test('auto-refresh window: processing/extracted, uploaded only if recent (inject
   const rows = [{ document: {}, version: v('uploaded', '2026-11-18T09:00:00Z') }]
   assert.ok(!hasInProgress(rows, now))
 })
+
+test('status filters group states, count rows and keep documents grouped in order', () => {
+  const { STATUS_FILTERS, matchesFilter, countByFilter, groupByDocument } = versions
+  assert.deepEqual(STATUS_FILTERS.map(f => f.id), ['all', 'in_progress', 'review', 'ready', 'published', 'failed'])
+  assert.ok(matchesFilter('unpublished', 'all'))
+  assert.ok(matchesFilter('extracted', 'in_progress'))
+  assert.ok(!matchesFilter('ready', 'published'))
+  assert.ok(matchesFilter('failed', 'failed'))
+  const rows = flattenRows([
+    { id: 'a', title: 'A', document_type: 'otro', created_at: 'x', versions: [{ id: 'a1', status: 'ready' }, { id: 'a2', status: 'failed' }] },
+    { id: 'b', title: 'B', document_type: 'otro', created_at: 'x', versions: [{ id: 'b1', status: 'uploaded' }, { id: 'b2', status: 'unpublished' }] },
+  ])
+  assert.deepEqual(countByFilter(rows), { all: 4, in_progress: 1, review: 0, ready: 1, published: 0, failed: 1 })
+  const groups = groupByDocument([rows[3], rows[0], rows[2], rows[1]])
+  assert.deepEqual(groups.map(g => g.document.id), ['b', 'a'])
+  assert.deepEqual(groups[0].rows.map(r => r.version.id), ['b2', 'b1'])
+  assert.deepEqual(groupByDocument([]), [])
+})

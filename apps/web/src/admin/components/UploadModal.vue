@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import UModal from '@nuxt/ui/components/Modal.vue'
 import UButton from '@nuxt/ui/components/Button.vue'
+import { MODAL_FULLSCREEN_ON_MOBILE } from '../lib/ui'
 import UAlert from '@nuxt/ui/components/Alert.vue'
 import UForm from '@nuxt/ui/components/Form.vue'
 import UFormField from '@nuxt/ui/components/FormField.vue'
@@ -78,6 +79,7 @@ const isType = (value: string): value is DocumentType =>
     title="Subir documento"
     description="Se registra el PDF y comienza su procesamiento. Después deberás revisarlo y publicarlo."
     :dismissible="!uploading"
+    :ui="MODAL_FULLSCREEN_ON_MOBILE"
   >
     <template #body>
       <UForm
@@ -97,7 +99,7 @@ const isType = (value: string): value is DocumentType =>
           <input
             type="file"
             accept="application/pdf,.pdf"
-            class="block w-full text-sm text-default file:me-3 file:rounded-md file:border file:border-default file:bg-default file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-highlighted"
+            class="block w-full rounded-md p-1.5 text-base text-muted ring ring-accented file:me-3 file:min-h-10 file:cursor-pointer file:rounded-md file:border-0 file:bg-elevated file:px-3 file:text-sm file:font-medium file:text-highlighted focus-visible:outline-2 focus-visible:outline-primary sm:text-sm sm:file:min-h-8"
             :disabled="uploading"
             @change="onFile"
           >
@@ -177,19 +179,22 @@ const isType = (value: string): value is DocumentType =>
       </UForm>
     </template>
     <template #footer>
-      <div class="flex w-full justify-end gap-2">
+      <div class="flex w-full flex-col-reverse gap-2 sm:flex-row sm:justify-end">
         <UButton
           color="neutral"
           variant="outline"
           label="Cancelar"
+          class="min-h-11 justify-center sm:min-h-0"
           :disabled="uploading"
           @click="open = false"
         />
         <UButton
           type="submit"
           form="upload-form"
+          color="neutral"
           label="Subir"
           icon="i-lucide-upload"
+          class="min-h-11 justify-center sm:min-h-0"
           :loading="uploading"
         />
       </div>

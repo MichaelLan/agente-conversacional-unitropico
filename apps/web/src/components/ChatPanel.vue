@@ -97,7 +97,7 @@ defineExpose({ focusPrompt })
     <template #header>
       <UDashboardNavbar
         as="header"
-        :ui="{ root: 'border-b-0', title: 'text-sm font-medium text-highlighted' }"
+        :ui="{ root: 'border-b-0', title: 'text-sm font-medium text-highlighted', toggle: '-ms-1.5 size-11 justify-center lg:size-auto' }"
       >
         <template #title>
           Asistente de Fomento Socioeconómico
@@ -165,7 +165,7 @@ defineExpose({ focusPrompt })
           </template>
         </UChatMessages>
 
-        <div class="sticky bottom-0 z-10 bg-default pb-3">
+        <div class="sticky bottom-0 z-10 bg-default pb-[max(0.75rem,env(safe-area-inset-bottom))]">
           <UChatPrompt
             ref="prompt"
             v-model="input"
@@ -189,11 +189,12 @@ defineExpose({ focusPrompt })
                 :disabled="!canSubmit"
                 color="neutral"
                 variant="solid"
+                class="size-11 justify-center sm:size-8"
                 @stop="emit('abort')"
               />
             </template>
           </UChatPrompt>
-          <p class="mt-2 text-center text-xs text-muted">
+          <p class="mt-2 text-center text-xs text-pretty text-muted">
             Respuestas generadas a partir de documentos institucionales.
             Verifica la información con Bienestar Universitario.
           </p>

@@ -1,7 +1,44 @@
-import { resolve } from 'node:path'
-import { defineConfig } from 'vite'
+import { createHash } from 'node:crypto'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { join, resolve } from 'node:path'
+import { defineConfig, type Plugin } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import ui from '@nuxt/ui/vite'
+
+/** Una app instalable: su HTML, scope, página sin conexión y prefijos que su SW ignora. */
+interface PwaApp { html: string; sw: string; scope: string; offline: string; manifest: string; icons: string; exclude: string[] }
+
+const PWA_APPS: PwaApp[] = [
+  { html: 'index.html', sw: 'sw.js', scope: '/', offline: '/offline.html', manifest: '/manifest.webmanifest', icons: '/icons/', exclude: ['/api/', '/admin/'] },
+  { html: 'admin/index.html', sw: 'admin/sw.js', scope: '/admin/', offline: '/admin/offline.html', manifest: '/admin/manifest.webmanifest', icons: '/admin/icons/', exclude: ['/api/'] },
+]
+const ICON_FILES = ['icon.svg', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png', 'apple-touch-icon.png']
+
+/**
+ * Genera los service workers a partir de `pwa/sw.js` (sin dependencias): precache
+ * del shell (HTML sin conexión, JS/CSS con hash referenciados por cada HTML,
+ * iconos, manifest) y versión de caché derivada de ese contenido. Solo en build.
+ */
+function pwaPlugin(): Plugin {
+  const template = readFileSync(resolve(import.meta.dirname, 'pwa/sw.js'), 'utf8')
+  return {
+    name: 'unitropico-pwa',
+    apply: 'build',
+    writeBundle(options) {
+      const dir = options.dir ?? resolve(import.meta.dirname, 'dist')
+      for (const app of PWA_APPS) {
+        const html = readFileSync(join(dir, app.html), 'utf8')
+        const assets = [...new Set(html.match(/\/assets\/[^"'\s)]+/g) ?? [])].sort()
+        const precache = [app.offline, app.manifest, ...ICON_FILES.map(name => app.icons + name), ...assets]
+        const version = createHash('sha256').update(template).update(JSON.stringify(precache)).digest('hex').slice(0, 12)
+        const config = JSON.stringify({ version, scope: app.scope, offline: app.offline, precache, exclude: app.exclude })
+        const source = template.replace(/\/\* __SW_CONFIG__ \*\/ \{[\s\S]*?\n\}/, `/* __SW_CONFIG__ */ ${config}`)
+        if (source === template) throw new Error('pwa/sw.js: marcador __SW_CONFIG__ no encontrado')
+        writeFileSync(join(dir, app.sw), source)
+      }
+    },
+  }
+}
 
 export default defineConfig({
   build: {
@@ -24,6 +61,7 @@ export default defineConfig({
   },
   plugins: [
     vue(),
+    pwaPlugin(),
     ui({
       colorMode: false,
       router: false,

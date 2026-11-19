@@ -42,7 +42,7 @@ function startOver(): void {
     <UDashboardGroup
       unit="rem"
       :persistent="false"
-      class="bg-muted"
+      class="h-dvh bg-muted ps-[env(safe-area-inset-left)] pe-[env(safe-area-inset-right)]"
     >
       <FaqSidebar
         v-model:open="sidebarOpen"
