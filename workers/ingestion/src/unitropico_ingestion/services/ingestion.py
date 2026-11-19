@@ -12,6 +12,7 @@ from dataclasses import asdict
 from hashlib import sha256
 
 from unitropico_ingestion.domain.chunking import Chunk, Chunker, PageText
+from unitropico_ingestion.domain.corrections import AppliedCorrection
 from unitropico_ingestion.domain.ingestion import (
     ErrorCode,
     IngestionError,
@@ -26,6 +27,7 @@ from unitropico_ingestion.ports import (
     VectorRecord,
     VersionRepository,
 )
+from unitropico_ingestion.services.corrections import apply_corrections
 from unitropico_ingestion.services.ocr_parser import parse_ocr_response
 
 EMBED_BATCH_SIZE = 96
@@ -176,9 +178,14 @@ async def run_ocr(
 
 
 # -- step 3 ----------------------------------------------------------------------
-def _chunk_line(chunk: Chunk) -> str:
+def _chunk_line(chunk: Chunk, applied: Sequence[AppliedCorrection] = ()) -> str:
     row = asdict(chunk)
     row["token_estimate"] = token_estimate(chunk.text)
+    # Corrections applied to the pages this chunk covers (trace, not a claim
+    # that the replaced text falls inside this very chunk).
+    row["correction_ids"] = [
+        c.id for c in applied if chunk.page_start <= c.page_number <= chunk.page_end
+    ]
     return json.dumps(row, ensure_ascii=False, sort_keys=True)
 
 
@@ -194,29 +201,48 @@ async def chunk_version(
     version_id: str,
     ocr_key: str,
 ) -> dict:
-    """Chunk the stored OCR by physical page and replace the version chunks."""
+    """Chunk the stored OCR by physical page and replace the version chunks.
+
+    The administrator's active text corrections are applied to the page text
+    before chunking (the cached OCR object is only read, never rewritten). A
+    correction that does not match exactly once fails the version with the
+    permanent ``correction_not_applicable`` before anything is written.
+    """
     raw = await blobs.get(ocr_key)
     if raw is None:
         raise IngestionError(ErrorCode.CHUNK_FAILED, "ocr_missing", permanent=True)
     result = parse_ocr_response(raw)
     pages = [PageText(page.page_number, page.markdown) for page in result.pages]
+    corrections = await repo.active_corrections(version_id)
+    pages, applied = apply_corrections(pages, corrections)
     chunks = chunker.chunk(pages, version_id=version_id)
     if not chunks:
         raise IngestionError(ErrorCode.OCR_EMPTY, "chunks=0", permanent=True)
     key = chunks_key(version_id, chunker.version)
-    body = "".join(_chunk_line(chunk) + "\n" for chunk in chunks).encode("utf-8")
-    await blobs.put(key, body, content_type="application/x-ndjson")
+    body = "".join(_chunk_line(chunk, applied) + "\n" for chunk in chunks)
+    await blobs.put(key, body.encode("utf-8"), content_type="application/x-ndjson")
     await repo.replace_chunks(
         version_id, chunker_version=chunker.version, chunks=chunks
     )
+    for item in applied:
+        await repo.log_event(
+            version_id,
+            step="correct",
+            status="succeeded",
+            detail=f"correction_applied id={item.id} page={item.page_number}",
+        )
     await repo.log_event(
-        version_id, step="chunk", status="succeeded", detail=f"chunks={len(chunks)}"
+        version_id,
+        step="chunk",
+        status="succeeded",
+        detail=f"chunks={len(chunks)} corrections={len(applied)}",
     )
     await repo.log_event(version_id, step="index_fts", status="succeeded")
     return {
         "chunks_key": key,
         "chunk_count": len(chunks),
         "chunker_version": chunker.version,
+        "corrections_applied": [correction.id for correction in applied],
     }
 
 

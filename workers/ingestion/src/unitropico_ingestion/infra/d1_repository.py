@@ -5,7 +5,8 @@ The binding is the SDK-wrapped D1 database: ``prepare(sql).bind(*args)`` with
 as Python dicts (or attribute objects) shaped ``{"results": [...], "meta":
 {"changes": n, ...}}``.
 
-``LOG_EVENT`` is a verbatim copy of the canonical ``log_event`` block of
+``LOG_EVENT`` and ``ACTIVE_CORRECTIONS`` are verbatim copies of the canonical
+``log_event`` and ``active_corrections_by_version`` blocks of
 ``infra/d1/queries.sql`` (a test keeps them identical). The other statements
 are specific to the ingestion state machine and are not yet in that file.
 Status transitions are also enforced by the schema triggers; the ``WHERE``
@@ -15,12 +16,18 @@ clauses make every write idempotent and never target ``published``.
 from collections.abc import Mapping, Sequence
 
 from unitropico_ingestion.domain.chunking import Chunk
+from unitropico_ingestion.domain.corrections import TextCorrection
 from unitropico_ingestion.domain.ingestion import VersionRecord
 from unitropico_ingestion.services.ingestion import token_estimate
 
 LOG_EVENT = """
 INSERT INTO processing_events (version_id, step, status, error_code, detail)
 VALUES (?1, ?2, ?3, ?4, ?5);"""
+
+ACTIVE_CORRECTIONS = """SELECT id, page_number, find_text, replace_text
+FROM text_corrections
+WHERE version_id = ?1 AND deleted_at IS NULL
+ORDER BY created_at, id;"""
 
 GET_VERSION = """SELECT id, document_id, status, source_r2_key, source_sha256,
        requires_review
@@ -124,6 +131,20 @@ class D1VersionRepository:
         return (
             await self._run(MARK_EXTRACTED, version_id, page_count, extraction_key) > 0
         )
+
+    async def active_corrections(self, version_id: str) -> list[TextCorrection]:
+        """Return the active corrections in application order."""
+        result = await self._stmt(ACTIVE_CORRECTIONS, version_id).all()  # type: ignore[attr-defined]
+        rows = _field(result, "results", None) or []
+        return [
+            TextCorrection(
+                id=str(_field(row, "id")),
+                page_number=int(_field(row, "page_number")),  # type: ignore[arg-type]
+                find_text=str(_field(row, "find_text")),
+                replace_text=str(_field(row, "replace_text")),
+            )
+            for row in rows
+        ]
 
     async def replace_chunks(
         self, version_id: str, *, chunker_version: str, chunks: Sequence[Chunk]

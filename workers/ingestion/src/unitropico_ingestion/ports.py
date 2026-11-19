@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from unitropico_ingestion.domain.chunking import Chunk
+from unitropico_ingestion.domain.corrections import TextCorrection
 from unitropico_ingestion.domain.ingestion import VersionRecord
 
 
@@ -76,6 +77,10 @@ class VersionRepository(Protocol):
         self, version_id: str, *, page_count: int, extraction_key: str
     ) -> bool:
         """Move processing/extracted to extracted with OCR provenance."""
+        ...
+
+    async def active_corrections(self, version_id: str) -> list[TextCorrection]:
+        """Return the corrections not logically deleted, in application order."""
         ...
 
     async def replace_chunks(

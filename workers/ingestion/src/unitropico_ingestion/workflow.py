@@ -281,6 +281,7 @@ async def run_ingestion(
         "version_id": version_id,
         "status": final["status"],
         "chunk_count": chunked["chunk_count"],
+        "corrections_applied": len(chunked.get("corrections_applied", [])),
         "page_count": ocr["page_count"],
         "ocr_reused": ocr["reused"],
         "embedding_batches_reused": reused_batches,

@@ -19,6 +19,7 @@ class ErrorCode(StrEnum):
     OCR_FAILED = "ocr_failed"
     OCR_EMPTY = "ocr_empty"
     CHUNK_FAILED = "chunk_failed"
+    CORRECTION_NOT_APPLICABLE = "correction_not_applicable"
     EMBEDDING_FAILED = "embedding_failed"
     INDEX_FAILED = "index_failed"
     INTERNAL_ERROR = "internal_error"

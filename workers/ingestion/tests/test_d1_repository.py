@@ -24,6 +24,13 @@ def test_log_event_is_the_canonical_query():
     assert " ".join(d1_repository.LOG_EVENT.split()) == _canonical("log_event")
 
 
+def test_active_corrections_is_the_canonical_query():
+    """The corrections read is the canonical query."""
+    assert " ".join(d1_repository.ACTIVE_CORRECTIONS.split()) == _canonical(
+        "active_corrections_by_version"
+    )
+
+
 def test_no_statement_publishes():
     """No statement publishes."""
     sql = [
