@@ -237,7 +237,7 @@ CREATE TABLE processing_events (
     id         INTEGER PRIMARY KEY,
     version_id TEXT NOT NULL REFERENCES document_versions (id) ON DELETE RESTRICT,
     step       TEXT NOT NULL
-               CHECK (step IN ('upload', 'extract', 'review', 'chunk', 'embed',
+               CHECK (step IN ('upload', 'extract', 'review', 'correct', 'chunk', 'embed',
                                'index_fts', 'index_vectors', 'publish', 'unpublish')),
     status     TEXT NOT NULL CHECK (status IN ('started', 'succeeded', 'failed', 'skipped')),
     error_code TEXT CHECK (error_code IS NULL OR length(trim(error_code)) > 0),
@@ -258,6 +258,77 @@ CREATE TRIGGER processing_events_append_only_delete
 BEFORE DELETE ON processing_events
 BEGIN
     SELECT RAISE(ABORT, 'processing_events_append_only');
+END;
+
+-- ---------------------------------------------------------------------------
+-- text_corrections: literal OCR corrections recorded by the administrator.
+-- The ingestion chunk step applies the active ones (deleted_at IS NULL) to the
+-- page text before chunking, so the OCR cached in R2 is never paid again.
+-- find_text must match exactly once in its page or the version fails with
+-- correction_not_applicable (see workers/ingestion/README.md).
+-- Rows are never deleted nor edited: deleted_at is a one-way logical delete,
+-- which keeps the audit trail. RESTRICT keeps versions with corrections.
+-- Lengths are in characters. replace_text may be empty (remove OCR noise).
+-- ---------------------------------------------------------------------------
+CREATE TABLE text_corrections (
+    id           TEXT PRIMARY KEY NOT NULL
+                 CHECK (length(CAST(id AS BLOB)) BETWEEN 1 AND 64 AND trim(id) = id),
+    version_id   TEXT NOT NULL REFERENCES document_versions (id) ON DELETE RESTRICT,
+    page_number  INTEGER NOT NULL CHECK (page_number >= 1),
+    find_text    TEXT NOT NULL CHECK (length(trim(find_text)) > 0 AND length(find_text) <= 500),
+    replace_text TEXT NOT NULL CHECK (length(replace_text) <= 500),
+    reason       TEXT NOT NULL CHECK (length(trim(reason)) > 0 AND length(reason) <= 300),
+    created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    deleted_at   TEXT,
+    CHECK (find_text <> replace_text),
+    CHECK (deleted_at IS NULL OR deleted_at >= created_at)
+) STRICT;
+
+CREATE INDEX text_corrections_version ON text_corrections (version_id, created_at, id);
+
+-- A published version is immutable: unpublish before adding or removing corrections.
+CREATE TRIGGER text_corrections_guard_insert
+BEFORE INSERT ON text_corrections
+WHEN (SELECT status FROM document_versions WHERE id = NEW.version_id) = 'published'
+BEGIN
+    SELECT RAISE(ABORT, 'published_version_immutable');
+END;
+
+-- Pages beyond the known physical page count can never match (NULL = unknown).
+CREATE TRIGGER text_corrections_page_range
+BEFORE INSERT ON text_corrections
+WHEN NEW.page_number > (SELECT page_count FROM document_versions WHERE id = NEW.version_id)
+BEGIN
+    SELECT RAISE(ABORT, 'correction_page_out_of_range');
+END;
+
+-- Only deleted_at may change, once, from NULL, and never on a published version.
+CREATE TRIGGER text_corrections_immutable
+BEFORE UPDATE ON text_corrections
+WHEN NEW.id IS NOT OLD.id
+  OR NEW.version_id IS NOT OLD.version_id
+  OR NEW.page_number IS NOT OLD.page_number
+  OR NEW.find_text IS NOT OLD.find_text
+  OR NEW.replace_text IS NOT OLD.replace_text
+  OR NEW.reason IS NOT OLD.reason
+  OR NEW.created_at IS NOT OLD.created_at
+  OR OLD.deleted_at IS NOT NULL
+  OR NEW.deleted_at IS NULL
+BEGIN
+    SELECT RAISE(ABORT, 'text_correction_immutable');
+END;
+
+CREATE TRIGGER text_corrections_guard_delete_published
+BEFORE UPDATE OF deleted_at ON text_corrections
+WHEN (SELECT status FROM document_versions WHERE id = OLD.version_id) = 'published'
+BEGIN
+    SELECT RAISE(ABORT, 'published_version_immutable');
+END;
+
+CREATE TRIGGER text_corrections_no_delete
+BEFORE DELETE ON text_corrections
+BEGIN
+    SELECT RAISE(ABORT, 'text_corrections_append_only');
 END;
 
 -- ---------------------------------------------------------------------------

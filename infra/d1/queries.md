@@ -77,7 +77,18 @@ Lee los metadatos de cita por versión con el mismo patrón `json_each(?1)`.
 
 Devuelve los chunks ordenados de una versión, para la ingesta (reindexar o regenerar vectores) y la vista previa del administrador. Usa el índice único `(version_id, ordinal)`.
 
-### 2.4 `published_versions_in_force`
+### 2.4 Revisión de texto: `chunks_page_by_version` y `count_chunks_by_version`
+
+Página de chunks de una versión para que el administrador revise el texto extraído (`GET /admin/versions/{id}/chunks`), en cualquier estado. `?2` = límite (la API lo acota a 1..100) y `?3` = offset. `chunker_version` sale de la versión (la tabla `chunks` no la guarda). Usa el índice único `(version_id, ordinal)`.
+
+### 2.5 Correcciones de texto (`text_corrections`)
+
+- `corrections_by_version`: todas (activas y borradas lógicamente), por `created_at, id`. Lo usa la API.
+- `active_corrections_by_version`: las que aplica la ingesta en el paso `chunk`, **en este orden** (la ingesta guarda una copia literal y un test comprueba que coincide). Usa el índice `text_corrections_version`.
+- `insert_correction`: los triggers rechazan versiones `published` y páginas por encima de un `page_count` conocido.
+- `soft_delete_correction`: fija `deleted_at` con el reloj de la base (así `deleted_at >= created_at`) solo si estaba activa; `RETURNING id` vacío = ya borrada o de otra versión. Las filas nunca se borran físicamente.
+
+### 2.6 `published_versions_in_force`
 
 Vista de administración de lo vigente en una fecha local `?1`.
 
@@ -110,7 +121,7 @@ uploaded → processing → extracted → review_required → ready → publishe
 
 ### 3.3 `log_event`
 
-Añade un registro a `processing_events`, que solo admite inserciones. `detail` acepta ≤4000 caracteres y **no** debe contener datos personales ni el texto de los documentos.
+Añade un registro a `processing_events`, que solo admite inserciones. Pasos: `upload`, `extract`, `review`, `correct` (alta, borrado lógico y aplicación de correcciones de texto), `chunk`, `embed`, `index_fts`, `index_vectors`, `publish`, `unpublish`. `detail` acepta ≤4000 caracteres y **no** debe contener datos personales ni el texto de los documentos.
 
 ## 4. Mantenimiento FTS
 

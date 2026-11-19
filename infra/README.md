@@ -11,7 +11,7 @@ Aquí **no** hay código de runtime ni configuración de despliegue. Cada app co
 
 | Ruta | Qué es |
 |---|---|
-| `d1/migrations/0001_initial.sql` | Migración inicial en formato `wrangler d1 migrations` (`NNNN_nombre.sql`, sin `BEGIN`/`COMMIT`): `documents`, `document_versions`, `chunks`, `chunks_fts` (FTS5 external-content, `unicode61 remove_diacritics 2`), `processing_events` (append-only: triggers que abortan `UPDATE` y `DELETE` con `processing_events_append_only`) y la vista `v_chunk_registry`. |
+| `d1/migrations/0001_initial.sql` | Migración inicial en formato `wrangler d1 migrations` (`NNNN_nombre.sql`, sin `BEGIN`/`COMMIT`): `documents`, `document_versions`, `chunks`, `chunks_fts` (FTS5 external-content, `unicode61 remove_diacritics 2`), `processing_events` (append-only: triggers que abortan `UPDATE` y `DELETE` con `processing_events_append_only`; pasos admitidos incluyen `correct`), `text_corrections` (correcciones literales de OCR con borrado lógico) y la vista `v_chunk_registry`. |
 | `d1/queries.sql` | SQL canónico de los adaptadores (búsqueda FTS, catálogo, ingesta idempotente, mantenimiento). |
 | `d1/queries.md` | Cómo usar esas consultas, el algoritmo de escape FTS5 y los límites de D1. |
 | `d1/tests/fts_query.py` | Referencia pura de `build_fts5_query` (el RAG la copia). |
@@ -23,6 +23,7 @@ Aquí **no** hay código de runtime ni configuración de despliegue. Cada app co
 - `documents` 1─N `document_versions` 1─N `chunks`. `chunks_fts` indexa `chunks(text, section)` y lo mantienen sincronizado los triggers.
 - La **vigencia no depende del orden de carga**. `effective_from`, `effective_until` (fechas `YYYY-MM-DD`) y `supersedes_version_id` son metadatos manuales del administrador. Una versión está *formalmente sustituida* solo cuando otra versión **publicada** la sustituye (`v_chunk_registry.formally_superseded`).
 - La lógica de estados, la publicación (revisada, con chunks y con páginas válidas) y la inmutabilidad de los chunks publicados las aplican CHECKs y triggers. No dependen solo del código de las apps.
+- `document_versions` 1─N `text_corrections`: correcciones literales del texto OCR por página (`find_text` ≤ 500 no vacío, `replace_text` ≤ 500 que puede ser vacío, `reason` ≤ 300 no vacío). Las filas no se borran ni se editan: solo `deleted_at` pasa una vez de NULL a la hora de la base (borrado lógico, trazabilidad). Triggers: no se insertan ni se borran lógicamente en una versión `published` (`published_version_immutable`), ni con `page_number > page_count` conocido (`correction_page_out_of_range`); `DELETE` aborta con `text_corrections_append_only`. La ingesta aplica las activas en el paso `chunk` (ver `workers/ingestion/README.md`); el OCR cacheado en R2 no cambia.
 - `chunks.seq INTEGER PRIMARY KEY` es el rowid estable del índice FTS (un rowid implícito puede cambiar con `VACUUM`). `chunks.id` (≤64 bytes) es el id público y el id del vector en Vectorize.
 - Los campos de cita del contrato v1 (`document_title`, `version_label`, `section`, `page_start`, `page_end`) salen de `v_chunk_registry`, nunca del LLM.
 

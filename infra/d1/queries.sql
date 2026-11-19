@@ -91,6 +91,49 @@ FROM chunks
 WHERE version_id = ?1
 ORDER BY ordinal;
 
+-- name: chunks_page_by_version
+-- ?1 = version id, ?2 = limit (1..100), ?3 = offset. Admin review of the
+-- extracted text, any status. chunker_version comes from the version row.
+SELECT c.ordinal, c.id, c.section, c.page_start, c.page_end, c.text,
+       v.chunker_version
+FROM chunks c
+JOIN document_versions v ON v.id = c.version_id
+WHERE c.version_id = ?1
+ORDER BY c.ordinal
+LIMIT ?2 OFFSET ?3;
+
+-- name: count_chunks_by_version
+-- ?1 = version id. Total for the admin review pagination.
+SELECT count(*) AS total FROM chunks WHERE version_id = ?1;
+
+-- name: corrections_by_version
+-- ?1 = version id. Every correction (active and logically deleted), oldest first.
+SELECT id, version_id, page_number, find_text, replace_text, reason,
+       created_at, deleted_at
+FROM text_corrections
+WHERE version_id = ?1
+ORDER BY created_at, id;
+
+-- name: active_corrections_by_version
+-- ?1 = version id. Corrections the ingestion chunk step applies, in this order.
+SELECT id, page_number, find_text, replace_text
+FROM text_corrections
+WHERE version_id = ?1 AND deleted_at IS NULL
+ORDER BY created_at, id;
+
+-- name: insert_correction
+-- ?1 id, ?2 version_id, ?3 page_number, ?4 find_text, ?5 replace_text, ?6 reason.
+-- Triggers refuse published versions and pages beyond a known page_count.
+INSERT INTO text_corrections (id, version_id, page_number, find_text, replace_text, reason)
+VALUES (?1, ?2, ?3, ?4, ?5, ?6);
+
+-- name: soft_delete_correction
+-- ?1 correction id, ?2 version id. Logical delete, only once (database clock,
+-- so deleted_at >= created_at holds).
+UPDATE text_corrections SET deleted_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE id = ?1 AND version_id = ?2 AND deleted_at IS NULL
+RETURNING id;
+
 -- name: published_versions_in_force
 -- ?1 = local date YYYY-MM-DD (America/Bogota). Admin view of what is in force.
 SELECT v.id AS version_id, v.document_id, d.title AS document_title, v.version_label,

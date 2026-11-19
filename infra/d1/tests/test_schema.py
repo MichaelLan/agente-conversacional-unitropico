@@ -712,5 +712,195 @@ class RetrievalQueryTests(SchemaTestCase):
                 self.assertIsNone(build_fts5_query(question))
 
 
+class TextCorrectionTests(SchemaTestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        self.add_document()
+        self.add_version(page_count=20)
+
+    def insert(
+        self,
+        correction_id: str = "cor-1",
+        page: int = 18,
+        find: str = "igual a 3.0",
+        replace: str = "igual o superior a 3.0",
+        reason: str = "El PDF original dice igual o superior",
+        version_id: str = "ver-1",
+    ) -> None:
+        self.db.execute(
+            QUERIES["insert_correction"],
+            (correction_id, version_id, page, find, replace, reason),
+        )
+
+    def active(self) -> list[str]:
+        rows = self.db.execute(QUERIES["active_corrections_by_version"], ("ver-1",))
+        return [row["id"] for row in rows]
+
+    def test_insert_and_list(self) -> None:
+        self.insert()
+        rows = self.db.execute(QUERIES["corrections_by_version"], ("ver-1",)).fetchall()
+        self.assertEqual(len(rows), 1)
+        row = rows[0]
+        self.assertEqual(
+            (row["page_number"], row["find_text"], row["replace_text"]),
+            (18, "igual a 3.0", "igual o superior a 3.0"),
+        )
+        self.assertIsNone(row["deleted_at"])
+        self.assertRegex(row["created_at"], r"^\d{4}-\d{2}-\d{2}T")
+        self.assertEqual(self.active(), ["cor-1"])
+
+    def test_empty_replacement_allowed(self) -> None:
+        self.insert(find="~~ruido~~", replace="")
+        self.assertEqual(self.active(), ["cor-1"])
+
+    def test_check_constraints(self) -> None:
+        cases = {
+            "page_zero": {"page": 0},
+            "blank_find": {"find": "   "},
+            "long_find": {"find": "x" * 501},
+            "long_replace": {"replace": "x" * 501},
+            "blank_reason": {"reason": " "},
+            "long_reason": {"reason": "x" * 301},
+            "noop": {"find": "igual", "replace": "igual"},
+            "bad_id": {"correction_id": " cor"},
+            "unknown_version": {"version_id": "nope"},
+        }
+        for name, kwargs in cases.items():
+            with self.subTest(name=name), self.assertRaises(sqlite3.IntegrityError):
+                self.insert(**kwargs)
+        self.insert(find="x" * 500, replace="y" * 500, reason="r" * 300)
+
+    def test_strict_page_number(self) -> None:
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.insert(page="dieciocho")  # type: ignore[arg-type]
+
+    def test_page_beyond_known_page_count_rejected(self) -> None:
+        with self.assertRaisesRegex(
+            sqlite3.IntegrityError, "correction_page_out_of_range"
+        ):
+            self.insert(page=21)
+        self.db.execute("UPDATE document_versions SET page_count = NULL")
+        self.insert(page=21)  # unknown page count: checked by the ingestion
+
+    def test_soft_delete_once_and_keeps_row(self) -> None:
+        self.insert()
+        self.insert("cor-2", page=3, find="otro", replace="otra")
+        deleted = self.db.execute(
+            QUERIES["soft_delete_correction"], ("cor-1", "ver-1")
+        ).fetchall()
+        self.assertEqual([row["id"] for row in deleted], ["cor-1"])
+        again = self.db.execute(
+            QUERIES["soft_delete_correction"], ("cor-1", "ver-1")
+        ).fetchall()
+        self.assertEqual(again, [])
+        other_version = self.db.execute(
+            QUERIES["soft_delete_correction"], ("cor-2", "ver-x")
+        ).fetchall()
+        self.assertEqual(other_version, [])
+        self.assertEqual(self.active(), ["cor-2"])
+        rows = self.db.execute(QUERIES["corrections_by_version"], ("ver-1",)).fetchall()
+        self.assertEqual([r["id"] for r in rows], ["cor-1", "cor-2"])
+        self.assertGreaterEqual(rows[0]["deleted_at"], rows[0]["created_at"])
+
+    def test_rows_are_immutable_and_never_deleted(self) -> None:
+        self.insert()
+        for sql in (
+            "UPDATE text_corrections SET find_text = 'otro'",
+            "UPDATE text_corrections SET replace_text = 'otro'",
+            "UPDATE text_corrections SET reason = 'otro'",
+            "UPDATE text_corrections SET page_number = 2",
+            "UPDATE text_corrections SET created_at = '2000-01-01T00:00:00.000Z'",
+        ):
+            with (
+                self.subTest(sql=sql),
+                self.assertRaisesRegex(
+                    sqlite3.IntegrityError, "text_correction_immutable"
+                ),
+            ):
+                self.db.execute(sql)
+        self.db.execute(QUERIES["soft_delete_correction"], ("cor-1", "ver-1"))
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "immutable"):
+            self.db.execute("UPDATE text_corrections SET deleted_at = NULL")
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "append_only"):
+            self.db.execute("DELETE FROM text_corrections")
+
+    def test_corrections_block_version_deletion(self) -> None:
+        self.insert()
+        self.assert_integrity_error("DELETE FROM document_versions WHERE id = 'ver-1'")
+
+    def test_published_version_refuses_changes(self) -> None:
+        self.insert()
+        self.add_chunk("c1", "texto")
+        self.to_ready("ver-1")
+        self.publish("ver-1")
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "immutable"):
+            self.insert("cor-2", page=2)
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "immutable"):
+            self.db.execute(QUERIES["soft_delete_correction"], ("cor-1", "ver-1"))
+        self.set_status("ver-1", "unpublished")
+        self.db.execute(QUERIES["soft_delete_correction"], ("cor-1", "ver-1"))
+        self.assertEqual(self.active(), [])
+
+    def test_active_order_is_creation_then_id(self) -> None:
+        self.insert("cor-b", page=1, find="b", replace="B")
+        self.insert("cor-a", page=1, find="a", replace="A")
+        self.db.execute(
+            "INSERT INTO text_corrections (id, version_id, page_number, find_text,"
+            " replace_text, reason, created_at) VALUES"
+            " ('cor-0', 'ver-1', 1, 'c', 'C', 'r', '2000-01-01T00:00:00.000Z')"
+        )
+        ordered = self.active()
+        self.assertEqual(ordered[0], "cor-0")
+        self.assertEqual(sorted(ordered[1:]), ["cor-a", "cor-b"])
+
+    def test_correct_event_step_allowed(self) -> None:
+        self.db.execute(
+            QUERIES["log_event"],
+            ("ver-1", "correct", "succeeded", None, "created correction=cor-1"),
+        )
+
+    def test_index_serves_version_lookup(self) -> None:
+        plan = " ".join(
+            r[3]
+            for r in self.db.execute(
+                "EXPLAIN QUERY PLAN "
+                + QUERIES["active_corrections_by_version"].rstrip(";"),
+                ("ver-1",),
+            )
+        )
+        self.assertIn("text_corrections_version", plan)
+
+
+class ChunkReviewQueryTests(SchemaTestCase):
+    def test_paginated_chunks_with_chunker_version(self) -> None:
+        self.add_document()
+        self.add_version()
+        for i in range(5):
+            self.add_chunk(f"c{i}", f"texto {i}", section="Artículo 1")
+        self.db.execute(
+            "UPDATE document_versions SET chunker_version = 'structural-v1'"
+        )
+        rows = self.db.execute(
+            QUERIES["chunks_page_by_version"], ("ver-1", 2, 1)
+        ).fetchall()
+        self.assertEqual([r["ordinal"] for r in rows], [1, 2])
+        self.assertEqual(
+            dict(rows[0]),
+            {
+                "ordinal": 1,
+                "id": "c1",
+                "section": "Artículo 1",
+                "page_start": 1,
+                "page_end": 1,
+                "text": "texto 1",
+                "chunker_version": "structural-v1",
+            },
+        )
+        total = self.db.execute(
+            QUERIES["count_chunks_by_version"], ("ver-1",)
+        ).fetchone()
+        self.assertEqual(total["total"], 5)
+
+
 if __name__ == "__main__":
     unittest.main()
