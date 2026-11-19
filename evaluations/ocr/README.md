@@ -1,4 +1,40 @@
-# Piloto OCR: convocatoria 2026, páginas 13–14
+# Evaluaciones OCR (Firecrawl Parse)
+
+## Estado actual (honesto y resumido)
+
+Este README conserva abajo la descripción del primer piloto; el estado vigente es:
+
+- Primer piloto (convocatoria 2026, págs. 13-14): resultado `uncertain_no_replay`,
+  consumo desconocido. No reenviar.
+- Res137: 20 páginas procesadas con HTTP 200 (`reports/remaining-execution.md`,
+  `reports/corpus-partial-assembly.md`). La cobertura no certifica calidad OCR;
+  las páginas 6 y 14 tienen bloques con `content` vacío.
+- Lote Conv2026 (15 páginas): `network_error`, sin `response.raw`, consumo remoto
+  desconocido. No se reintenta; el lote permanece `stopped_no_replay`.
+- Corpus v2: ensamblado parcial offline (216 páginas únicas; 15 de convocatoria SIN
+  texto). Todas las páginas conservan `requires_review` y `publication_blocked`:
+  **bloqueado para publicación**, no es un corpus completo para web/RAG.
+- Los scripts `pilot.py`, `remaining.py` y `remaining_send.py` hacen o preparan
+  llamadas de pago; no ejecutar `send` sin autorización humana explícita.
+
+## Herramientas de calidad
+
+Proyecto Python propio (`pyproject.toml`, `uv.lock`; Python 3.14, sin dependencias
+de runtime; grupo `dev`: `ruff==0.17.4`, `pytest==9.2.0`). Desde `evaluations/ocr/`:
+
+```sh
+uv sync --locked --group dev
+uv run ruff check .
+uv run ruff format --check .
+uv run pytest -q
+```
+
+pytest descubre las pruebas `unittest` de `tests/` (también valen
+`python -m unittest discover -s tests`). Todas las pruebas son offline, con
+fakes y credenciales falsas; no necesitan `.artifacts/`. Ruff excluye `.artifacts/`.
+CI: `.github/workflows/evaluations.yml` (sin secrets ni red a Firecrawl).
+
+## Historial: primer piloto
 
 **Existe un intento registrado con resultado incierto; no reenviar.**
 El resultado local es `uncertain_no_replay`, con `http_status: null` y sin

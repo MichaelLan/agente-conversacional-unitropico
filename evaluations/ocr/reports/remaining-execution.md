@@ -1,4 +1,9 @@
 # Sender restante: preparado, NO ejecutado
+
+> **Nota de estado posterior:** este informe es evidencia histórica de la preparación.
+> El sender se ejecutó después: Res137 devolvió 20 páginas con HTTP 200 y el lote
+> Conv2026 (15 páginas) terminó en `network_error` con consumo desconocido. Ver
+> `corpus-partial-assembly.md` para el estado vigente (corpus v2 bloqueado para publicación).
 No POST real, credenciales leídas, polling ni gasto nuevo en esta unidad.
 Solo se ejecutaron pruebas con fakes y precheck real offline; `execution/` sigue ausente.
 Autorización: 20 páginas Res137 + 15 convocatoria, estimadas 35 créditos, NO 100.
