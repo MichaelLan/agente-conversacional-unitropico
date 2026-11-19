@@ -156,6 +156,38 @@ UPDATE text_corrections SET deleted_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 WHERE id = ?1 AND version_id = ?2 AND deleted_at IS NULL
 RETURNING id;
 
+-- name: overrides_by_version
+-- ?1 = version id. Every page override (active and logically deleted), oldest
+-- first, ties broken by rowid (insertion order).
+SELECT id, version_id, page_number, text, reason, created_at, deleted_at
+FROM page_overrides
+WHERE version_id = ?1
+ORDER BY created_at, rowid;
+
+-- name: active_overrides_by_version
+-- ?1 = version id. Overrides the ingestion chunk step applies (at most one per
+-- page). Read in the same D1 batch as active_corrections_by_version and
+-- corrections_rev_by_version (one snapshot).
+SELECT id, page_number, text
+FROM page_overrides
+WHERE version_id = ?1 AND deleted_at IS NULL
+ORDER BY page_number;
+
+-- name: insert_override
+-- ?1 id, ?2 version_id, ?3 page_number, ?4 text, ?5 reason.
+-- Triggers refuse published versions and pages beyond a known page_count.
+-- A second active override for the same page fails with UNIQUE constraint
+-- failed (index page_overrides_active_unique).
+INSERT INTO page_overrides (id, version_id, page_number, text, reason)
+VALUES (?1, ?2, ?3, ?4, ?5)
+RETURNING id;
+
+-- name: soft_delete_override
+-- ?1 override id, ?2 version id. Logical delete, only once (database clock).
+UPDATE page_overrides SET deleted_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE id = ?1 AND version_id = ?2 AND deleted_at IS NULL
+RETURNING id;
+
 -- name: published_versions_in_force
 -- ?1 = local date YYYY-MM-DD (America/Bogota). Admin view of what is in force.
 SELECT v.id AS version_id, v.document_id, d.title AS document_title, v.version_label,

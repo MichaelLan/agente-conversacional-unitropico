@@ -967,6 +967,189 @@ class TextCorrectionTests(SchemaTestCase):
         self.assertIn("text_corrections_version", plan)
 
 
+class PageOverrideTests(SchemaTestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        self.add_document()
+        self.add_version(page_count=20)
+
+    def insert(
+        self,
+        override_id: str = "pov-1",
+        page: int = 4,
+        text: str = "Texto completo de la página 4",
+        reason: str = "Diagrama mal transcrito",
+        version_id: str = "ver-1",
+    ) -> list[str]:
+        rows = self.db.execute(
+            QUERIES["insert_override"], (override_id, version_id, page, text, reason)
+        ).fetchall()
+        return [row["id"] for row in rows]
+
+    def active(self) -> list[tuple[str, int]]:
+        rows = self.db.execute(QUERIES["active_overrides_by_version"], ("ver-1",))
+        return [(row["id"], row["page_number"]) for row in rows]
+
+    def dirty(self) -> tuple[int, int]:
+        row = self.db.execute(
+            "SELECT corrections_dirty, corrections_rev FROM document_versions"
+            " WHERE id = 'ver-1'"
+        ).fetchone()
+        return row[0], row[1]
+
+    def test_insert_returns_id_and_lists(self) -> None:
+        self.assertEqual(self.insert(), ["pov-1"])
+        rows = self.db.execute(QUERIES["overrides_by_version"], ("ver-1",)).fetchall()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(
+            (rows[0]["page_number"], rows[0]["text"], rows[0]["reason"]),
+            (4, "Texto completo de la página 4", "Diagrama mal transcrito"),
+        )
+        self.assertIsNone(rows[0]["deleted_at"])
+        self.assertEqual(self.active(), [("pov-1", 4)])
+
+    def test_check_constraints(self) -> None:
+        cases = {
+            "page_zero": {"page": 0},
+            "blank_text": {"text": "  \n "},
+            "long_text": {"text": "x" * 20001},
+            "blank_reason": {"reason": " "},
+            "long_reason": {"reason": "x" * 301},
+            "bad_id": {"override_id": "pov-1 "},
+            "unknown_version": {"version_id": "nope"},
+        }
+        for name, kwargs in cases.items():
+            with self.subTest(name=name), self.assertRaises(sqlite3.IntegrityError):
+                self.insert(**kwargs)
+        self.insert(text="á" * 20000, reason="r" * 300)
+
+    def test_strict_page_number(self) -> None:
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.insert(page="cuatro")  # type: ignore[arg-type]
+
+    def test_page_beyond_known_page_count_rejected(self) -> None:
+        with self.assertRaisesRegex(
+            sqlite3.IntegrityError, "override_page_out_of_range"
+        ):
+            self.insert(page=21)
+        self.insert(page=20)
+        self.db.execute("UPDATE document_versions SET page_count = NULL")
+        self.insert("pov-2", page=21)
+
+    def test_one_active_per_page_deleted_does_not_block(self) -> None:
+        self.insert()
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "UNIQUE"):
+            self.insert("pov-2", text="otro texto")
+        self.insert("pov-3", page=5)
+        self.db.execute(QUERIES["soft_delete_override"], ("pov-1", "ver-1"))
+        self.insert("pov-4")
+        self.assertEqual(self.active(), [("pov-4", 4), ("pov-3", 5)])
+
+    def test_soft_delete_once_and_keeps_row(self) -> None:
+        self.insert()
+        deleted = self.db.execute(
+            QUERIES["soft_delete_override"], ("pov-1", "ver-1")
+        ).fetchall()
+        self.assertEqual([row["id"] for row in deleted], ["pov-1"])
+        for params in (("pov-1", "ver-1"), ("pov-1", "ver-x")):
+            again = self.db.execute(QUERIES["soft_delete_override"], params).fetchall()
+            self.assertEqual(again, [])
+        rows = self.db.execute(QUERIES["overrides_by_version"], ("ver-1",)).fetchall()
+        self.assertEqual(len(rows), 1)
+        self.assertGreaterEqual(rows[0]["deleted_at"], rows[0]["created_at"])
+        self.assertEqual(self.active(), [])
+
+    def test_rows_are_immutable_and_never_deleted(self) -> None:
+        self.insert()
+        for sql in (
+            "UPDATE page_overrides SET text = 'otro'",
+            "UPDATE page_overrides SET reason = 'otro'",
+            "UPDATE page_overrides SET page_number = 2",
+            "UPDATE page_overrides SET created_at = '2000-01-01T00:00:00.000Z'",
+        ):
+            with (
+                self.subTest(sql=sql),
+                self.assertRaisesRegex(
+                    sqlite3.IntegrityError, "page_override_immutable"
+                ),
+            ):
+                self.db.execute(sql)
+        self.db.execute(QUERIES["soft_delete_override"], ("pov-1", "ver-1"))
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "immutable"):
+            self.db.execute("UPDATE page_overrides SET deleted_at = NULL")
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "immutable"):
+            self.db.execute(
+                "UPDATE page_overrides SET deleted_at = '2100-01-01T00:00:00.000Z'"
+            )
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "append_only"):
+            self.db.execute("DELETE FROM page_overrides")
+
+    def test_overrides_block_version_deletion(self) -> None:
+        self.insert()
+        self.assert_integrity_error("DELETE FROM document_versions WHERE id = 'ver-1'")
+
+    def test_published_version_refuses_changes(self) -> None:
+        self.insert()
+        self.add_chunk("c1", "texto")
+        self.to_ready("ver-1")
+        self.db.execute("UPDATE document_versions SET corrections_dirty = 0")
+        self.publish("ver-1")
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "immutable"):
+            self.insert("pov-2", page=2)
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "immutable"):
+            self.db.execute(QUERIES["soft_delete_override"], ("pov-1", "ver-1"))
+        self.set_status("ver-1", "unpublished")
+        self.db.execute(QUERIES["soft_delete_override"], ("pov-1", "ver-1"))
+        self.assertEqual(self.active(), [])
+
+    def test_create_and_delete_mark_dirty_and_bump_revision(self) -> None:
+        self.assertEqual(self.dirty(), (0, 0))
+        self.insert()
+        self.assertEqual(self.dirty(), (1, 1))
+        self.db.execute("UPDATE document_versions SET corrections_dirty = 0")
+        self.db.execute(QUERIES["soft_delete_override"], ("pov-1", "ver-1"))
+        self.assertEqual(self.dirty(), (1, 2))
+        self.db.execute("UPDATE document_versions SET corrections_dirty = 0")
+        self.db.execute(QUERIES["soft_delete_override"], ("pov-1", "ver-1"))
+        self.assertEqual(self.dirty(), (0, 2))
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.insert("pov-2", page=99)
+        self.assertEqual(self.dirty(), (0, 2))
+        # Corrections and overrides share one revision counter.
+        self.db.execute(
+            QUERIES["insert_correction"], ("cor-1", "ver-1", 1, "a", "b", "r")
+        )
+        self.assertEqual(self.dirty(), (1, 3))
+
+    def test_clear_dirty_compare_and_set_sees_override_changes(self) -> None:
+        for status in ("processing", "extracted"):
+            self.set_status("ver-1", status)
+        self.insert()
+        (rev,) = self.db.execute(
+            QUERIES["corrections_rev_by_version"], ("ver-1",)
+        ).fetchone()
+        self.insert("pov-2", page=2)
+        self.db.execute(QUERIES["clear_corrections_dirty"], ("ver-1", rev))
+        self.assertEqual(self.dirty(), (1, 2))
+
+    def test_dirty_override_blocks_publish(self) -> None:
+        self.add_chunk("c1", "texto")
+        self.insert()
+        self.to_ready("ver-1")
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "corrections_pending"):
+            self.publish("ver-1")
+
+    def test_index_serves_version_lookup(self) -> None:
+        plan = " ".join(
+            r[3]
+            for r in self.db.execute(
+                "EXPLAIN QUERY PLAN " + QUERIES["overrides_by_version"].rstrip(";"),
+                ("ver-1",),
+            )
+        )
+        self.assertIn("page_overrides_version", plan)
+
+
 class ChunkReviewQueryTests(SchemaTestCase):
     def test_paginated_chunks_with_chunker_version(self) -> None:
         self.add_document()

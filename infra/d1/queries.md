@@ -91,6 +91,27 @@ Página de chunks de una versión para que el administrador revise el texto extr
 - `soft_delete_correction`: fija `deleted_at` con el reloj de la base (así `deleted_at >= created_at`) solo si estaba activa; `RETURNING id` vacío = ya borrada o de otra versión. Las filas nunca se borran físicamente.
 - **Correcciones pendientes.** Los triggers `text_corrections_dirty_insert` y `text_corrections_dirty_delete` ponen `document_versions.corrections_dirty = 1` e incrementan `corrections_rev` en cada alta o borrado lógico, dentro de la misma transacción. Solo el paso `chunk` de la ingesta limpia la marca (`clear_corrections_dirty`). Mientras valga 1, la versión no puede publicarse: el trigger `document_versions_publish_guard` aborta con `corrections_pending`, y además lo impide el `CHECK` de `published`. La API también rechaza con 409 `corrections_pending` marcarla como revisada.
 
+### 2.5b Sustituciones de página (`page_overrides`)
+
+- Tabla `STRICT`: id 1..64 bytes (la API usa `pov_<32 hex>`), `page_number ≥ 1`,
+  `text` 1..20000 caracteres (no vacío tras quitar espacios, tabuladores y
+  saltos), `reason` 1..300, `created_at`, `deleted_at` (borrado lógico).
+- Índice único parcial `page_overrides_active_unique (version_id, page_number)
+  WHERE deleted_at IS NULL`: como máximo una activa por página; una borrada no
+  bloquea otra nueva. Violación → `UNIQUE constraint failed: page_overrides…`
+  (la API responde 409 `override_exists`).
+- Triggers: alta prohibida en versiones `published` y bajas también
+  (`published_version_immutable`); `page_number` > `page_count` conocido →
+  `override_page_out_of_range`; solo `deleted_at` es mutable, una vez, desde NULL
+  (`page_override_immutable`); `DELETE` físico prohibido
+  (`page_overrides_append_only`); altas y bajas ponen `corrections_dirty = 1` y
+  suben `corrections_rev` (mismo contador que las correcciones).
+- `overrides_by_version` (API): todas por `created_at, rowid`.
+- `active_overrides_by_version` (ingesta): activas por página; se lee en el
+  mismo batch que `active_corrections_by_version` y `corrections_rev_by_version`.
+- `insert_override` (`RETURNING id`) y `soft_delete_override` (`RETURNING id`
+  vacío = ya borrada o de otra versión).
+
 ### 2.6 `published_versions_in_force`
 
 Vista de administración de lo vigente en una fecha local `?1`.

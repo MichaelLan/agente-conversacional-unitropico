@@ -10,8 +10,8 @@
 --   * Hashes are 64 lowercase hex characters (sha256).
 --   * A version is published only when reviewed, extracted, chunked and with valid page ranges.
 --   * Chunks of a published version are immutable (unpublish first).
---   * A version with corrections not yet applied by the ingestion
---     (corrections_dirty = 1) cannot be published.
+--   * A version with corrections or page overrides not yet applied by the
+--     ingestion (corrections_dirty = 1) cannot be published.
 --   * Upload order never implies validity: effective_from/effective_until and
 --     supersedes_version_id are manual administrator metadata.
 
@@ -55,7 +55,8 @@ CREATE TABLE document_versions (
     chunker_version       TEXT CHECK (chunker_version IS NULL OR length(trim(chunker_version)) > 0),
     extraction_r2_key     TEXT UNIQUE CHECK (extraction_r2_key IS NULL OR length(trim(extraction_r2_key)) > 0),
     -- Pending OCR corrections. Every create or logical delete of a text_correction
-    -- sets corrections_dirty = 1 and increments corrections_rev (triggers below).
+    -- or a page_override sets corrections_dirty = 1 and increments corrections_rev
+    -- (triggers below).
     -- Only the ingestion chunk step clears the flag, and only when the revision it
     -- read together with the corrections is still current (compare-and-set).
     corrections_dirty     INTEGER NOT NULL DEFAULT 0 CHECK (corrections_dirty IN (0, 1)),
@@ -367,6 +368,95 @@ CREATE TRIGGER text_corrections_no_delete
 BEFORE DELETE ON text_corrections
 BEGIN
     SELECT RAISE(ABORT, 'text_corrections_append_only');
+END;
+
+-- ---------------------------------------------------------------------------
+-- page_overrides: full replacement text for one page, recorded by the
+-- administrator when literal corrections cannot fix it (diagrams, tables as
+-- images, text invented by the OCR). The ingestion chunk step replaces the
+-- prepared page text with the prepared override text BEFORE applying the
+-- literal corrections of that page. At most one active override per
+-- (version, page). Same audit rules as text_corrections: rows are never
+-- deleted nor edited, deleted_at is a one-way logical delete, and every create
+-- or logical delete marks the version dirty and bumps corrections_rev.
+-- Lengths are in characters.
+-- ---------------------------------------------------------------------------
+CREATE TABLE page_overrides (
+    id          TEXT PRIMARY KEY NOT NULL
+                CHECK (length(CAST(id AS BLOB)) BETWEEN 1 AND 64 AND trim(id) = id),
+    version_id  TEXT NOT NULL REFERENCES document_versions (id) ON DELETE RESTRICT,
+    page_number INTEGER NOT NULL CHECK (page_number >= 1),
+    text        TEXT NOT NULL
+                CHECK (length(trim(text, char(32, 9, 10, 13))) > 0 AND length(text) <= 20000),
+    reason      TEXT NOT NULL CHECK (length(trim(reason)) > 0 AND length(reason) <= 300),
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    deleted_at  TEXT,
+    CHECK (deleted_at IS NULL OR deleted_at >= created_at)
+) STRICT;
+
+CREATE INDEX page_overrides_version ON page_overrides (version_id, created_at);
+
+-- At most one active override per page. Logically deleted rows do not block.
+CREATE UNIQUE INDEX page_overrides_active_unique
+    ON page_overrides (version_id, page_number)
+    WHERE deleted_at IS NULL;
+
+CREATE TRIGGER page_overrides_guard_insert
+BEFORE INSERT ON page_overrides
+WHEN (SELECT status FROM document_versions WHERE id = NEW.version_id) = 'published'
+BEGIN
+    SELECT RAISE(ABORT, 'published_version_immutable');
+END;
+
+CREATE TRIGGER page_overrides_page_range
+BEFORE INSERT ON page_overrides
+WHEN NEW.page_number > (SELECT page_count FROM document_versions WHERE id = NEW.version_id)
+BEGIN
+    SELECT RAISE(ABORT, 'override_page_out_of_range');
+END;
+
+CREATE TRIGGER page_overrides_immutable
+BEFORE UPDATE ON page_overrides
+WHEN NEW.id IS NOT OLD.id
+  OR NEW.version_id IS NOT OLD.version_id
+  OR NEW.page_number IS NOT OLD.page_number
+  OR NEW.text IS NOT OLD.text
+  OR NEW.reason IS NOT OLD.reason
+  OR NEW.created_at IS NOT OLD.created_at
+  OR OLD.deleted_at IS NOT NULL
+  OR NEW.deleted_at IS NULL
+BEGIN
+    SELECT RAISE(ABORT, 'page_override_immutable');
+END;
+
+CREATE TRIGGER page_overrides_guard_delete_published
+BEFORE UPDATE OF deleted_at ON page_overrides
+WHEN (SELECT status FROM document_versions WHERE id = OLD.version_id) = 'published'
+BEGIN
+    SELECT RAISE(ABORT, 'published_version_immutable');
+END;
+
+CREATE TRIGGER page_overrides_dirty_insert
+AFTER INSERT ON page_overrides
+BEGIN
+    UPDATE document_versions
+    SET corrections_dirty = 1, corrections_rev = corrections_rev + 1
+    WHERE id = NEW.version_id;
+END;
+
+CREATE TRIGGER page_overrides_dirty_delete
+AFTER UPDATE OF deleted_at ON page_overrides
+WHEN OLD.deleted_at IS NULL AND NEW.deleted_at IS NOT NULL
+BEGIN
+    UPDATE document_versions
+    SET corrections_dirty = 1, corrections_rev = corrections_rev + 1
+    WHERE id = NEW.version_id;
+END;
+
+CREATE TRIGGER page_overrides_no_delete
+BEFORE DELETE ON page_overrides
+BEGIN
+    SELECT RAISE(ABORT, 'page_overrides_append_only');
 END;
 
 -- ---------------------------------------------------------------------------
