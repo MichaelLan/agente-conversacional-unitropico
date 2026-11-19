@@ -1,18 +1,22 @@
-"""Verify the real API→binding client→RAG contract, not the Workers runtime."""
+"""Real API -> service-binding client -> RAG contract, not the Workers runtime."""
 
-import json
 from dataclasses import replace
 from hashlib import sha256
-from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
-from test_retrieval import CANDIDATE, ENTRY, Catalog, Retriever
-from test_retrieval_http import evidence_json, request
-
 from unitropico_rag.core.settings import Settings
 from unitropico_rag.main import build_app
 from unitropico_rag.services.prompt import DEFAULT_REFERRAL
+
+from support import (
+    CANDIDATE,
+    ENTRY,
+    Catalog,
+    Retriever,
+    compose_api,
+    evidence_json,
+    request,
+)
 
 EMPTY = {"status": "unavailable", "evidence": []}
 FIXTURE = replace(
@@ -31,72 +35,14 @@ REGISTRY = replace(
 )
 
 
-class AsgiBinding:
-    """Test-only async fetch transport forwarding serialized bytes to real ASGI."""
-
-    def __init__(self, app):
-        """Keep one downstream app and observable transport exchanges."""
-        self.app, self.calls, self.responses = app, [], []
-
-    async def fetch(self, url, *, method, headers, body):
-        """Await downstream HTTP without sockets, SDKs or fabricated responses."""
-        self.calls.append((url, method, headers, body))
-        assert url.startswith("https://rag.internal/")
-        path = url.removeprefix("https://rag.internal")
-        messages = []
-
-        async def receive():
-            """Deliver the binding client's actual serialized request."""
-            return {"type": "http.request", "body": body.encode(), "more_body": False}
-
-        async def send(message):
-            """Capture actual RAG status and response bytes."""
-            messages.append(message)
-
-        await self.app(
-            {
-                "type": "http",
-                "asgi": {"version": "3.0"},
-                "http_version": "1.1",
-                "method": method,
-                "scheme": "https",
-                "path": path,
-                "raw_path": path.encode(),
-                "query_string": b"",
-                "root_path": "",
-                "headers": [
-                    (k.lower().encode(), v.encode()) for k, v in headers.items()
-                ],
-            },
-            receive,
-            send,
-        )
-        assert not messages[-1].get("more_body", False)
-        status = messages[0]["status"]
-        raw = b"".join(message.get("body", b"") for message in messages)
-        self.responses.append((status, json.loads(raw)))
-
-        async def decode():
-            """Decode exactly the response emitted by RAG."""
-            return json.loads(raw)
-
-        return SimpleNamespace(status=status, json=decode)
-
-
 @pytest.fixture
-def compose(monkeypatch):
-    """Expose API source only inside the test, without workspace packaging."""
-    api_src = Path(__file__).resolve().parents[2] / "api" / "src"
-    monkeypatch.syspath_prepend(str(api_src))
-    from unitropico_api.infra.service_binding import RagServiceBindingClient
-    from unitropico_api.main import create_app as create_api
+def compose():
+    """Compose both real applications with the real binding client."""
 
     def build(retriever=None, catalog=None):
-        """Compose both real applications with the real binding client."""
         rag = build_app(Settings(), retriever=retriever, catalog=catalog)
-        binding = AsgiBinding(rag)
-        client = RagServiceBindingClient(binding)
-        return create_api(rag_client=client, chat_client=client), binding
+        app, binding = compose_api(rag)()
+        return app, binding
 
     return build
 
