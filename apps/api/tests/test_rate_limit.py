@@ -21,6 +21,7 @@ from unitropico_api.services.rate_limit import (
     DEFAULT_SALT,
     RateLimitGuard,
     client_key,
+    normalize_client,
 )
 
 IP = "203.0.113.77"
@@ -272,3 +273,99 @@ def test_early_body_rejection_ignores_other_routes():
     assert early_public_body_rejection("GET", "/chat", big) is None
     assert early_public_body_rejection("POST", "/health", big) is None
     assert early_public_body_rejection("POST", "/admin/uploads", big) is None
+
+
+def test_ipv6_in_the_same_slash_64_share_a_key():
+    """Rotating addresses inside a /64 does not evade the limit."""
+    a = client_key("2001:db8:1:2::1", DEFAULT_SALT)
+    assert a == client_key("2001:DB8:1:2:ffff:ffff:ffff:ffff", DEFAULT_SALT)
+    assert a != client_key("2001:db8:1:3::1", DEFAULT_SALT)
+    assert normalize_client("2001:db8:1:2:aaaa::1") == "2001:db8:1:2::/64"
+
+
+def test_ipv4_keys_are_per_address_and_mapped_ipv6_is_ipv4():
+    """IPv4 keeps the full address; ::ffff:a.b.c.d equals a.b.c.d."""
+    assert client_key("203.0.113.1", DEFAULT_SALT) != client_key(
+        "203.0.113.2", DEFAULT_SALT
+    )
+    assert client_key("::ffff:203.0.113.1", DEFAULT_SALT) == client_key(
+        "203.0.113.1", DEFAULT_SALT
+    )
+
+
+@pytest.mark.parametrize("value", ["not-an-ip", "999.1.1.1", "1.2.3", "", None])
+def test_invalid_ip_is_anonymous(value):
+    """Garbage or missing input shares the anonymous key."""
+    assert client_key(value, DEFAULT_SALT) == ANONYMOUS_KEY
+
+
+def test_early_admin_rejection():
+    """Auth precedes body checks on every non-upload /admin/* route."""
+    from unitropico_api.api.rate_limit import (
+        MAX_ADMIN_BODY_BYTES,
+        early_admin_rejection,
+    )
+
+    auth = {"authorization": f"Bearer {TOKEN}"}
+    big = str(MAX_ADMIN_BODY_BYTES + 1)
+
+    def run(method, path, token=TOKEN, **headers):
+        return early_admin_rejection(method, path, _headers(**headers), token)
+
+    assert run("PATCH", "/admin/documents/x", token=None)[0] == 503
+    assert run("PATCH", "/admin/documents/x", content_length=big)[0] == 401
+    ok = {"authorization": f"Bearer {TOKEN}"}
+    get = early_admin_rejection
+    assert (
+        get("PATCH", "/admin/x", lambda n: {**ok, "content-length": big}.get(n), TOKEN)[
+            0
+        ]
+        == 413
+    )
+    assert (
+        get(
+            "POST",
+            "//admin//x/",
+            lambda n: {**ok, "transfer-encoding": "chunked"}.get(n),
+            TOKEN,
+        )[0]
+        == 411
+    )
+    assert get("DELETE", "/admin/x", auth.get, TOKEN) is None
+    assert (
+        get("GET", "/admin/x", lambda n: {**ok, "content-length": big}.get(n), TOKEN)
+        is None
+    )
+    assert get("GET", "/admin/x", _headers(), TOKEN)[0] == 401
+    assert get("POST", "/admin/uploads", _headers(content_length=big), TOKEN) is None
+    assert get("POST", "/chat", _headers(content_length=big), TOKEN) is None
+    assert get("POST", "/administrator", _headers(), TOKEN) is None
+
+
+def test_admin_auth_throttle_only_on_401():
+    """429 with Retry-After once limited; 503/413/None pass through; fail-open."""
+    from unitropico_api.api.rate_limit import admin_auth_throttle
+
+    class Limiter:
+        def __init__(self, allowed):
+            self.allowed, self.keys = allowed, []
+
+        async def allow(self, key):
+            self.keys.append(key)
+            return self.allowed
+
+    limited, free = Limiter(False), Limiter(True)
+    r401 = (401, {"WWW-Authenticate": "Bearer"}, {"error": {}})
+
+    def run(limiter, rejection):
+        guard = RateLimitGuard(limiter, route="admin_auth")
+        return asyncio.run(admin_auth_throttle(guard, rejection, IP))
+
+    out = run(limited, r401)
+    assert out[0] == 429 and out[1] == {"Retry-After": "60"}
+    assert out[2] == LIMITED
+    assert run(free, r401) == r401
+    assert run(None, r401) == r401  # missing binding: fail-open
+    for passthrough in (None, (503, {}, {}), (413, {}, {})):
+        assert run(limited, passthrough) == passthrough
+    assert limited.keys == [client_key(IP, DEFAULT_SALT)]

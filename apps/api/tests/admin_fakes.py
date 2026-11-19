@@ -96,6 +96,13 @@ class FakeD1:
         """Return the raw row of a version."""
         return self.sql("SELECT * FROM document_versions WHERE id = ?", version_id)[0]
 
+    def apply_corrections(self, version_id: str) -> None:
+        """Clear corrections_dirty as a completed ingestion chunk step would."""
+        self.sql(
+            "UPDATE document_versions SET corrections_dirty = 0 WHERE id = ?",
+            version_id,
+        )
+
     def events(self, version_id: str) -> list[tuple]:
         """Return (step, status, error_code, detail) of a version's events."""
         rows = self.sql(
@@ -106,7 +113,11 @@ class FakeD1:
         return [tuple(row.values()) for row in rows]
 
     def simulate_workflow(self, version_id: str, final: str = "ready") -> None:
-        """Advance a version as the ingestion Workflow would."""
+        """Advance a version as the ingestion Workflow would.
+
+        Like the ingestion chunk step, a successful run applies the current
+        corrections and clears ``corrections_dirty``.
+        """
         self.sql(
             "UPDATE document_versions SET status = 'processing' WHERE id = ?",
             version_id,
@@ -123,7 +134,7 @@ class FakeD1:
         self.sql(
             "UPDATE document_versions SET status = 'extracted', page_count = 3, "
             "extraction_r2_key = 'extractions/' || id || '.json', "
-            "chunker_version = 'chunker-1' WHERE id = ?",
+            "chunker_version = 'chunker-1', corrections_dirty = 0 WHERE id = ?",
             version_id,
         )
         self.sql(

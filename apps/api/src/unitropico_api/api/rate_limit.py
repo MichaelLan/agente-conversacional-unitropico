@@ -4,7 +4,14 @@ from collections.abc import Callable
 
 from fastapi import Depends, FastAPI, Request, params
 from fastapi.responses import JSONResponse
+from fastapi.security.utils import get_authorization_scheme_param
 
+from unitropico_api.api.admin import (
+    ADMIN_PREFIX,
+    check_admin_token,
+    is_upload_request,
+)
+from unitropico_api.domain.admin import AdminDisabled, AdminError
 from unitropico_api.services.rate_limit import RateLimitGuard
 
 CLIENT_IP_HEADER = "cf-connecting-ip"
@@ -106,3 +113,79 @@ def early_public_body_rejection(
             error_body("length_required", "Se requiere el encabezado Content-Length."),
         )
     return None
+
+
+ADMIN_BODY_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+MAX_ADMIN_BODY_BYTES = 64 * 1024
+
+Rejection = tuple[int, dict[str, str], dict[str, dict[str, str]]]
+
+
+def early_admin_rejection(
+    method: str,
+    path: str,
+    header: Callable[[str], str | None],
+    token: str | None,
+    max_bytes: int = MAX_ADMIN_BODY_BYTES,
+) -> Rejection | None:
+    """Authenticate every non-upload /admin/* request before its body is read.
+
+    Order: 503 (no token), 401, then for methods with a body 413 when
+    Content-Length exceeds `max_bytes` and 411 when it is missing or invalid on
+    a chunked body. Uploads have their own check; other paths continue.
+    """
+    normalized = posixpath.normpath(_SLASHES.sub("/", path))
+    if is_upload_request(method, path) or not (
+        normalized == ADMIN_PREFIX or normalized.startswith(ADMIN_PREFIX + "/")
+    ):
+        return None
+    scheme, supplied = get_authorization_scheme_param(header("authorization"))
+    try:
+        check_admin_token(
+            token.encode() if token else None,
+            supplied if scheme.lower() == "bearer" else None,
+        )
+    except AdminError as error:
+        status = 503 if isinstance(error, AdminDisabled) else 401
+        headers = {"WWW-Authenticate": "Bearer"} if status == 401 else {}
+        return status, headers, error_body(error.code, error.message)
+    if method.upper() not in ADMIN_BODY_METHODS:
+        return None
+    length = (header("content-length") or "").strip()
+    if length.isascii() and length.isdigit():
+        if int(length) > max_bytes:
+            return (
+                413,
+                {},
+                error_body(
+                    "payload_too_large",
+                    f"La solicitud supera el límite de {max_bytes} bytes.",
+                ),
+            )
+        return None
+    if length or "chunked" in (header("transfer-encoding") or "").lower():
+        return (
+            411,
+            {},
+            error_body("length_required", "Se requiere el encabezado Content-Length."),
+        )
+    return None
+
+
+async def admin_auth_throttle(
+    guard: RateLimitGuard, rejection: Rejection | None, client_ip: str | None
+) -> Rejection | None:
+    """Replace a 401 with 429 once the client exceeds its failed-auth quota.
+
+    Only consulted when early authentication failed; fail-open when the
+    limiter is unavailable (the guard logs it).
+    """
+    if rejection is None or rejection[0] != 401:
+        return rejection
+    if await guard.check(client_ip) == "limited":
+        return (
+            429,
+            {"Retry-After": str(RETRY_AFTER_SECONDS)},
+            error_body("rate_limited", RATE_LIMITED_MESSAGE),
+        )
+    return rejection

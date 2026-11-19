@@ -23,6 +23,20 @@ MAX_CHUNKS_PAGE = 100
 DEFAULT_CHUNKS_PAGE = 50
 MAX_ACTIVE_CORRECTIONS = 100
 """Active corrections per version (each one is one event in the chunk step)."""
+# (code, message) of the correction conflicts raised by the service and the adapter.
+CORRECTIONS_PENDING = (
+    "corrections_pending",
+    "Hay correcciones creadas o borradas que aún no se han aplicado: reprocese "
+    "la versión antes de marcarla como revisada o publicarla.",
+)
+TOO_MANY_CORRECTIONS = (
+    "too_many_corrections",
+    f"La versión ya tiene {MAX_ACTIVE_CORRECTIONS} correcciones activas.",
+)
+DUPLICATE_CORRECTION = (
+    "duplicate_correction",
+    "Ya existe una corrección activa para ese texto en esa página.",
+)
 MAX_FIND_TEXT = 500
 MAX_REPLACE_TEXT = 500
 MAX_REASON = 300
@@ -166,9 +180,20 @@ class ChunksQuery(BaseModel):
 
 
 def _no_control_chars(value: str) -> str:
-    """Reject control characters other than tab and line breaks."""
-    if any(unicodedata.category(ch) == "Cc" and ch not in "\t\n\r" for ch in value):
-        raise ValueError("no se admiten caracteres de control")
+    """Reject control (Cc) and format (Cf) characters except tab and line breaks.
+
+    Cf covers bidirectional overrides and isolates (U+202A-U+202E,
+    U+2066-U+2069), zero-width characters, the soft hyphen and the BOM: they
+    are invisible in the admin panel, so they could make a correction look
+    different from what it does. ZWJ/ZWNJ (U+200D/U+200C) are rejected too:
+    Spanish text never needs them and the ingestion normalization removes them
+    from the page text, so a find_text containing them could never be what the
+    administrator saw.
+    """
+    for ch in value:
+        category = unicodedata.category(ch)
+        if (category == "Cc" and ch not in "\t\n\r") or category == "Cf":
+            raise ValueError("no se admiten caracteres de control ni de formato")
     return value
 
 
@@ -189,13 +214,30 @@ Reason = Annotated[
 ]
 
 
+MATCH_RULE_HELP = (
+    "find_text se busca en el texto preparado de la página física indicada, el "
+    "mismo que se muestra en los fragmentos: texto normalizado (espacios "
+    "colapsados, caracteres invisibles eliminados), sin los encabezados y pies "
+    "de página repetidos (solo queda su primera aparición en el documento) y con "
+    "las tablas convertidas a filas Markdown (| celda | celda |), con las "
+    "entidades HTML decodificadas y sin etiquetas. Copie el texto desde un "
+    "fragmento de esa página. La comparación es literal (mayúsculas, tildes y "
+    "puntuación cuentan); cualquier secuencia de espacios o saltos de línea "
+    "equivale a otra. Debe aparecer exactamente una vez en la página (las "
+    "apariciones solapadas cuentan) o la versión falla con "
+    "correction_not_applicable. Las correcciones de una página se aplican en "
+    "orden de creación, cada una sobre el resultado de las anteriores. Un "
+    "fragmento que une dos páginas solo se corrige página a página."
+)
+
+
 class CorrectionCreate(BaseModel):
     """Body of POST /admin/versions/{id}/corrections (literal OCR correction)."""
 
     model_config = ConfigDict(extra="forbid", strict=True)
 
     page_number: Annotated[int, Field(ge=1)]
-    find_text: FindText
+    find_text: Annotated[FindText, Field(description=MATCH_RULE_HELP)]
     replace_text: ReplaceText
     reason: Reason
 
@@ -236,6 +278,12 @@ class VersionSummary(BaseModel):
     created_at: str
     updated_at: str
     published_at: str | None
+    corrections_dirty: bool
+    """Corrections were created or deleted after the last applied chunking.
+
+    While true the version cannot be marked reviewed nor published (409
+    ``corrections_pending``): reprocess it so the ingestion applies them.
+    """
 
 
 class VersionView(BaseModel):
@@ -348,12 +396,14 @@ class CorrectionList(BaseModel):
 
     version_id: str
     corrections: list[TextCorrectionView]
+    match_rule: str = MATCH_RULE_HELP
 
 
 REPROCESS_NOTICE = (
     "El cambio se aplicará cuando se reprocese la versión "
     "(POST /admin/versions/{id}/reprocess); no se reprocesa automáticamente. "
-    "La versión vuelve a requerir revisión."
+    "La versión vuelve a requerir revisión y no podrá marcarse como revisada ni "
+    "publicarse hasta que el reprocesamiento aplique las correcciones."
 )
 
 
@@ -363,6 +413,7 @@ class CorrectionResult(BaseModel):
     correction: TextCorrectionView
     version_status: VersionStatus
     requires_review: bool
+    corrections_dirty: bool
     reprocess_required: bool = True
     message: str = REPROCESS_NOTICE
 

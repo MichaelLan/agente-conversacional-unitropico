@@ -4,7 +4,10 @@ from typing import Any, Protocol
 
 from unitropico_api.core.logger import get_logger
 from unitropico_api.domain.admin import (
+    CORRECTIONS_PENDING,
+    DUPLICATE_CORRECTION,
     REPROCESSABLE,
+    TOO_MANY_CORRECTIONS,
     AdminError,
     ChunkReview,
     Conflict,
@@ -61,7 +64,8 @@ VERSION_COLUMNS = (
     "v.id, v.document_id, v.version_label, v.status, v.requires_review, "
     "v.error_code, v.processing_attempts, v.source_sha256, v.source_bytes, "
     "v.page_count, v.issued_at, v.effective_from, v.effective_until, "
-    "v.supersedes_version_id, v.created_at, v.updated_at, v.published_at"
+    "v.supersedes_version_id, v.created_at, v.updated_at, v.published_at, "
+    "v.corrections_dirty"
 )
 VIEW_SELECT = (
     f"SELECT {VERSION_COLUMNS}, d.title AS d_title, "
@@ -98,6 +102,9 @@ TRIGGER_CONFLICTS = {
     "published_version_immutable": "La versión publicada no puede modificarse.",
     "correction_page_out_of_range": "La página supera el número de páginas.",
     "text_correction_immutable": "Las correcciones no pueden editarse.",
+    "corrections_pending": (
+        "Hay correcciones sin aplicar: reprocese la versión antes de publicarla."
+    ),
 }
 # Same statements as infra/d1/queries.sql (chunks_page_by_version,
 # count_chunks_by_version, corrections_by_version, insert_correction,
@@ -112,7 +119,7 @@ COUNT_CHUNKS = "SELECT count(*) AS total FROM chunks WHERE version_id = ?1"
 CORRECTIONS = (
     "SELECT id, version_id, page_number, find_text, replace_text, reason, "
     "created_at, deleted_at FROM text_corrections WHERE version_id = ?1 "
-    "ORDER BY created_at, id"
+    "ORDER BY created_at, rowid"
 )
 CORRECTION_BY_ID = (
     "SELECT id, version_id, page_number, find_text, replace_text, reason, "
@@ -120,7 +127,17 @@ CORRECTION_BY_ID = (
 )
 INSERT_CORRECTION = (
     "INSERT INTO text_corrections (id, version_id, page_number, find_text, "
-    "replace_text, reason) VALUES (?1, ?2, ?3, ?4, ?5, ?6)"
+    "replace_text, reason) SELECT ?1, ?2, ?3, ?4, ?5, ?6 "
+    "WHERE (SELECT count(*) FROM text_corrections "
+    "WHERE version_id = ?2 AND deleted_at IS NULL) < 100 RETURNING id"
+)
+# Logs the creation only if INSERT_CORRECTION inserted the row (same batch).
+LOG_CREATION_IF_INSERTED = (
+    "INSERT INTO processing_events (version_id, step, status, detail) "
+    "SELECT ?2, 'correct', 'succeeded', "
+    "'correction_created id=' || ?1 || ' page=' || ?3 "
+    "WHERE EXISTS (SELECT 1 FROM text_corrections "
+    "WHERE id = ?1 AND version_id = ?2 AND deleted_at IS NULL)"
 )
 SOFT_DELETE_CORRECTION = (
     "UPDATE text_corrections SET deleted_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') "
@@ -137,7 +154,7 @@ LOG_DELETION_IF_ACTIVE = (
 # A pending correction invalidates the review: ready/unpublished go back to
 # review_required so the version cannot be published before a new review
 # (normally after reprocessing). ?2 = correction id that must still be active
-# (deletion) or NULL (creation, already inserted in the same batch).
+# (deletion, runs before the soft delete) or was just inserted (creation).
 REQUIRE_REVIEW_FOR_CORRECTION = (
     "UPDATE document_versions SET requires_review = 1, "
     "status = CASE WHEN status IN ('ready', 'unpublished') "
@@ -184,6 +201,8 @@ def translate_error(
         if code in message:
             return Conflict(code, text)
     if "UNIQUE constraint failed" in message:
+        if "text_corrections." in message:
+            return Conflict(*DUPLICATE_CORRECTION)
         for column, (code, text) in UNIQUE_CONFLICTS.items():
             if column in message:
                 return Conflict(code, text)
@@ -411,8 +430,11 @@ class D1DocumentRepository:
             values.append(int(value) if isinstance(value, bool) else value)
             slots[name] = f"?{len(values)}"
             assignments.append(f"{name} = {slots[name]}")
+        dirty_guard = ""
         if "requires_review" in version:
             slot = slots["requires_review"]
+            # Pending corrections forbid marking the version as reviewed.
+            dirty_guard = f" AND NOT ({slot} = 0 AND corrections_dirty = 1)"
             assignments.append(
                 f"status = CASE WHEN {slot} = 0 AND status = 'review_required' "
                 f"THEN 'ready' WHEN {slot} = 1 AND status IN ('ready', 'unpublished') "
@@ -423,7 +445,8 @@ class D1DocumentRepository:
         statements.append(
             self._stmt(
                 f"UPDATE document_versions SET {', '.join(assignments)} "
-                f"WHERE id = ?1 AND status <> 'published'{guard} RETURNING id",
+                f"WHERE id = ?1 AND status <> 'published'{guard}{dirty_guard} "
+                "RETURNING id",
                 *values,
             )
         )
@@ -439,7 +462,15 @@ class D1DocumentRepository:
         )
         results = await self._batch(statements)
         current = await self.get_version(version_id)
-        if current is not None and current.version.status != "published" and document:
+        if (
+            dirty_guard
+            and not results[-2]
+            and current is not None
+            and current.version.corrections_dirty
+            and version["requires_review"] is False
+        ):
+            conflict = Conflict(*CORRECTIONS_PENDING)
+        elif current is not None and current.version.status != "published" and document:
             conflict = Conflict(
                 "document_has_published_version",
                 "El documento tiene otra versión publicada: despublíquela antes "
@@ -461,7 +492,7 @@ class D1DocumentRepository:
                     "UPDATE document_versions SET status = 'published', "
                     "published_at = ?2, updated_at = ?2 WHERE id = ?1 "
                     "AND status IN ('ready', 'unpublished') AND requires_review = 0 "
-                    "RETURNING id",
+                    "AND corrections_dirty = 0 RETURNING id",
                     version_id,
                     stamp,
                 ),
@@ -469,9 +500,12 @@ class D1DocumentRepository:
             ],
             check_code="publish_requirements_unmet",
         )
-        return await self._after_guarded_update(
-            version_id, results[0], _stale("publicar")
-        )
+        stale = _stale("publicar")
+        if not results[0]:
+            current = await self.get_version(version_id)
+            if current is not None and current.version.corrections_dirty:
+                stale = Conflict(*CORRECTIONS_PENDING)
+        return await self._after_guarded_update(version_id, results[0], stale)
 
     async def unpublish(self, version_id: str) -> VersionView:
         """Withdraw a published version."""
@@ -555,9 +589,15 @@ class D1DocumentRepository:
         return _correction(rows[0]) if rows else None
 
     async def create_correction(self, new: NewCorrection) -> TextCorrectionView:
-        """Store a correction and its creation event atomically."""
+        """Store a correction and its creation event atomically.
+
+        The cap of active corrections is checked by the INSERT itself (no row
+        returned = cap reached) and duplicates by a partial unique index, so
+        concurrent requests cannot bypass either. The schema triggers mark the
+        version ``corrections_dirty`` in the same transaction.
+        """
         try:
-            await self._batch(
+            results = await self._batch(
                 [
                     self._stmt(
                         INSERT_CORRECTION,
@@ -568,20 +608,20 @@ class D1DocumentRepository:
                         new.replace_text,
                         new.reason,
                     ),
-                    self._stmt(REQUIRE_REVIEW_FOR_CORRECTION, new.version_id, None),
+                    self._stmt(REQUIRE_REVIEW_FOR_CORRECTION, new.version_id, new.id),
                     self._stmt(
-                        LOG_EVENT,
+                        LOG_CREATION_IF_INSERTED,
+                        new.id,
                         new.version_id,
-                        "correct",
-                        "succeeded",
-                        None,
-                        f"correction_created id={new.id} page={new.page_number}",
+                        new.page_number,
                     ),
                 ],
                 check_code="invalid_correction",
             )
         except AdminError as error:
             raise _correction_error(error) from None
+        if not results[0]:
+            raise Conflict(*TOO_MANY_CORRECTIONS)
         created = await self.get_correction(new.version_id, new.id)
         if created is None:
             raise StorageUnavailable(

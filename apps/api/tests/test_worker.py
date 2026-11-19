@@ -133,12 +133,17 @@ def test_local_worker_configuration() -> None:
             {
                 "name": "CHAT_LIMITER",
                 "namespace_id": "1001",
-                "simple": {"limit": 10, "period": 60},
+                "simple": {"limit": 20, "period": 60},
             },
             {
                 "name": "RETRIEVAL_LIMITER",
                 "namespace_id": "1002",
                 "simple": {"limit": 30, "period": 60},
+            },
+            {
+                "name": "ADMIN_AUTH_LIMITER",
+                "namespace_id": "1003",
+                "simple": {"limit": 10, "period": 60},
             },
         ],
     }
@@ -289,3 +294,51 @@ def test_worker_rejects_large_public_bodies_before_the_asgi_bridge(worker, path)
     ok = Incoming(path, {"question": "x"}, headers={"content-length": "20"})
     asyncio.run(entry(worker, RAG=rag).fetch(ok))
     assert len(worker.sdk.calls) == 1
+
+
+def _admin(method, path, **headers):
+    """Request double for an arbitrary admin route."""
+    return Incoming(path, {}, method=method, headers=headers)
+
+
+def test_worker_authenticates_other_admin_routes_before_the_bridge(worker):
+    """No token / bad token / oversized or chunked bodies never reach asgi.fetch."""
+    db = FakeD1()
+    big = str(100 * 1024 * 1024)
+    cases = [
+        ({}, {}, 503),
+        ({"ADMIN_TOKEN": TOKEN}, {"content-length": big}, 401),
+        ({"ADMIN_TOKEN": TOKEN}, {**AUTH, "content-length": big}, 413),
+        ({"ADMIN_TOKEN": TOKEN}, {**AUTH, "transfer-encoding": "chunked"}, 411),
+    ]
+    for env, headers, status in cases:
+        worker._app = None
+        response = asyncio.run(
+            entry(worker, DB=db, **env).fetch(
+                _admin("PATCH", "/admin/documents/x", **headers)
+            )
+        )
+        assert response.status == status
+    assert worker.sdk.calls == []
+    ok = _admin("GET", "/admin/documents", **AUTH)
+    asyncio.run(entry(worker, DB=db, ADMIN_TOKEN=TOKEN).fetch(ok))
+    assert len(worker.sdk.calls) == 1
+
+
+def test_worker_throttles_failed_admin_auth(worker):
+    """The limiter is read from env, keyed by client, and only after a 401."""
+    limiter = Ratelimit(1)
+    env = {"ADMIN_TOKEN": TOKEN, "DB": FakeD1(), "ADMIN_AUTH_LIMITER": limiter}
+    ip = {"cf-connecting-ip": "2001:db8::1"}
+    bad = _admin("GET", "/admin/documents", **ip)
+    statuses = []
+    for _ in range(2):
+        response = asyncio.run(entry(worker, **env).fetch(bad))
+        statuses.append((response.status, response.headers.get("Retry-After")))
+    assert statuses == [(401, None), (429, "60")]
+    good = _admin("GET", "/admin/documents", **AUTH, **ip)
+    asyncio.run(entry(worker, **env).fetch(good))
+    assert len(limiter.calls) == 2
+    # Missing binding: fail-open, plain 401.
+    response = asyncio.run(entry(worker, ADMIN_TOKEN=TOKEN).fetch(bad))
+    assert response.status == 401

@@ -1,5 +1,6 @@
 import hashlib
 import hmac
+import ipaddress
 from typing import Literal, Protocol
 
 from unitropico_api.core.logger import get_logger
@@ -27,16 +28,36 @@ class RateLimiter(Protocol):
         ...
 
 
+def normalize_client(client_ip: str | None) -> str:
+    """Canonical network of a client: IPv4 as is, IPv6 reduced to its /64.
+
+    A client usually controls a whole /64, so keying on the full IPv6 address
+    would let it rotate addresses to evade the limit. IPv4-mapped IPv6 counts
+    as IPv4. Missing or invalid input yields `anonymous`.
+    """
+    try:
+        address = ipaddress.ip_address((client_ip or "").strip())
+    except ValueError:
+        return ANONYMOUS_KEY
+    if isinstance(address, ipaddress.IPv6Address):
+        if address.ipv4_mapped is not None:
+            return str(address.ipv4_mapped)
+        prefix = int(address) >> 64 << 64
+        return f"{ipaddress.IPv6Address(prefix)}/64"
+    return str(address)
+
+
 def client_key(client_ip: str | None, salt: str) -> str:
     """Derive a stable, non-reversible client key; never the IP itself.
 
-    HMAC-SHA256 of the IP under `salt`, truncated to 32 hex characters. Without
-    an IP (local development) every client shares the `anonymous` key.
+    HMAC-SHA256 of the normalized client (full IPv4 or IPv6 /64) under `salt`,
+    truncated to 32 hex characters. Without a valid IP every client shares the
+    `anonymous` key.
     """
-    ip = (client_ip or "").strip()
-    if not ip:
+    network = normalize_client(client_ip)
+    if network == ANONYMOUS_KEY:
         return ANONYMOUS_KEY
-    digest = hmac.new(salt.encode(), ip.encode(), hashlib.sha256).hexdigest()
+    digest = hmac.new(salt.encode(), network.encode(), hashlib.sha256).hexdigest()
     return digest[:32]
 
 

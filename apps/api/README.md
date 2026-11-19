@@ -74,17 +74,25 @@ con `hmac.compare_digest` (bytes UTF-8). Sin token válido: 401 con
 **todas** las rutas admin responden 503 `admin_disabled` (nunca quedan abiertas).
 La autenticación se resuelve antes de leer o validar el cuerpo.
 
-**Chequeo temprano de `POST /admin/uploads`** (`src/worker.py` +
-`api/admin.early_upload_rejection`): el puente ASGI del SDK de Workers lee todo el
-cuerpo antes de invocar FastAPI, así que el Worker decide solo con las cabeceras,
-antes de `asgi.fetch` y sin tocar el cuerpo (ruta normalizada: `//` y `/` final).
-Orden: 503 `admin_disabled` (sin token) → 401 `unauthorized` (con
-`WWW-Authenticate: Bearer`; misma `check_admin_token`/`hmac.compare_digest` que
-FastAPI) → 411 `length_required` (falta `Content-Length`) → 413 `payload_too_large`
-(supera `ADMIN_MAX_UPLOAD_BYTES`). FastAPI repite auth y límite como defensa en
-profundidad. No verificado en workerd real (solo con dobles del SDK). El token nunca se
-registra en logs (`Settings.admin_token` es `SecretStr`). Sin cookies ni sesión;
-las rutas admin no pasan por el rate limiting público (las protege el token).
+**Rechazo temprano de `/admin/*`** (`src/worker.py` +
+`api/rate_limit.early_admin_rejection` y `api/admin.early_upload_rejection`): el
+puente ASGI del SDK de Workers lee todo el cuerpo antes de invocar FastAPI, así
+que el Worker decide con las cabeceras, **antes de leer el cuerpo**, para toda
+ruta `/admin/*` (ruta normalizada: `//` y `/` final):
+- Sin `ADMIN_TOKEN`: 503 `admin_disabled`.
+- Bearer ausente o inválido: 401 `unauthorized` (con `WWW-Authenticate: Bearer`;
+  misma `check_admin_token`/`hmac.compare_digest` que FastAPI).
+- Con token válido, `POST`/`PUT`/`PATCH`/`DELETE`: 413 `payload_too_large` si
+  `Content-Length` > 64 KiB; 411 `length_required` si falta en un cuerpo
+  `chunked`. `POST /admin/uploads` conserva su propio límite
+  (`ADMIN_MAX_UPLOAD_BYTES`; 411 si falta `Content-Length`, 413 si lo supera).
+- Cualquier otro método o ruta sigue a FastAPI, que repite auth y límites como
+  defensa en profundidad.
+
+Los intentos fallidos (401) consumen la cuota de `ADMIN_AUTH_LIMITER` (ver
+«Rate limiting»). No verificado en workerd real (solo con dobles del SDK). El
+token nunca se registra en logs (`Settings.admin_token` es `SecretStr`). Sin
+cookies ni sesión.
 
 Errores: `{"error": {"code": "...", "message": "texto en español"}}`; también los
 422 de validación bajo `/admin` (las rutas públicas conservan el 422 de FastAPI).
@@ -94,13 +102,13 @@ Errores: `{"error": {"code": "...", "message": "texto en español"}}`; también 
 | `POST /admin/uploads?title&document_type&version_label[&document_id]` | 201 nuevo / 200 mismo sha | 404 `document_not_found`, 409 `source_registered_elsewhere`/`version_label_taken`, 411 `length_required`, 413 `payload_too_large`, 415 `unsupported_media_type`, 422 `invalid_pdf`/`invalid_request` |
 | `GET /admin/documents` | `{documents: [{id,title,document_type,created_at,versions:[...]}]}` | |
 | `GET /admin/versions/{id}` | versión + documento + `error_detail` + `processing_events` + `workflow` (o null) | 404 |
-| `PATCH /admin/versions/{id}` | `{document, version}` | 404, 409 `version_published`/`document_has_published_version`/`version_label_taken`/`review_not_available`/`supersedes_cycle`, 422 `invalid_request`/`invalid_effective_range`/`invalid_supersedes`/`supersedes_other_document` |
-| `POST /admin/versions/{id}/publish` | `{document, version}` | 409 `invalid_status_transition`/`review_required`/`publish_without_chunks`/`chunk_page_out_of_range`/`publish_requirements_unmet` |
+| `PATCH /admin/versions/{id}` | `{document, version}` | 404, 409 `version_published`/`document_has_published_version`/`version_label_taken`/`review_not_available`/`corrections_pending`/`supersedes_cycle`, 422 `invalid_request`/`invalid_effective_range`/`invalid_supersedes`/`supersedes_other_document` |
+| `POST /admin/versions/{id}/publish` | `{document, version}` | 409 `invalid_status_transition`/`corrections_pending`/`review_required`/`publish_without_chunks`/`chunk_page_out_of_range`/`publish_requirements_unmet` |
 | `POST /admin/versions/{id}/unpublish` | `{document, version}` | 409 si no está `published` |
 | `POST /admin/versions/{id}/reprocess` | `{document, version, ingestion}` | 409 `invalid_status_transition`/`ingestion_in_progress`, 503 `workflow_launch_failed` |
 | `GET /admin/versions/{id}/chunks?offset&limit` | `{version_id, status, total, offset, limit, chunks: [...]}` | 404 `version_not_found`, 422 `invalid_request` |
-| `GET /admin/versions/{id}/corrections` | `{version_id, corrections: [...]}` (activas y borradas) | 404 `version_not_found` |
-| `POST /admin/versions/{id}/corrections` | 201 `{correction, version_status, requires_review, reprocess_required, message}` | 404, 409 `version_published`/`duplicate_correction`/`too_many_corrections`, 422 `invalid_request`/`page_out_of_range` |
+| `GET /admin/versions/{id}/corrections` | `{version_id, corrections: [...], match_rule}` (activas y borradas) | 404 `version_not_found` |
+| `POST /admin/versions/{id}/corrections` | 201 `{correction, version_status, requires_review, corrections_dirty, reprocess_required, message}` | 404, 409 `version_published`/`duplicate_correction`/`too_many_corrections`, 422 `invalid_request`/`page_out_of_range` |
 | `DELETE /admin/versions/{id}/corrections/{cid}` | 200, mismo sobre que el POST | 404 `version_not_found`/`correction_not_found`, 409 `version_published` |
 
 Detalles:
@@ -133,12 +141,17 @@ Detalles:
   guardados. `supersedes_version_id` debe existir y no ser la propia versión.
   `requires_review=false` solo en `review_required|ready|unpublished` y mueve
   `review_required → ready`; `true` mueve `ready|unpublished → review_required`.
+  Con `corrections_dirty = true`, `requires_review=false` → 409
+  `corrections_pending` (también lo impone la condición del UPDATE, por si la
+  marca cambia entre la comprobación y la escritura).
   Versión `published` → 409 (despublicar primero). Documento y versión se
   actualizan en un único `batch`.
 - **Publish**: desde `ready` (y `unpublished`, que el esquema permite, para volver
-  a publicar tras editar) con `requires_review=false`; fija `published_at`. Los
-  triggers/CHECK del esquema (chunks, rango de páginas, `page_count`, etc.) se
-  traducen a 409.
+  a publicar tras editar) con `requires_review=false` y `corrections_dirty =
+  false` (si no, 409 `corrections_pending`, comprobado en el servicio, en el
+  UPDATE y en el trigger `document_versions_publish_guard`); fija
+  `published_at`. Los triggers/CHECK del esquema (chunks, rango de páginas,
+  `page_count`, etc.) se traducen a 409.
 - **Reprocess**: desde `uploaded|failed|review_required|ready|unpublished`. Pone
   `requires_review=1` (la nueva extracción debe revisarse), registra
   `reprocess_requested` y crea la instancia o la reinicia si ya terminó. No cambia
@@ -177,42 +190,79 @@ de R2, sin pagarlo otra vez; el paso `chunk` aplica las correcciones, ver
 `workers/ingestion/README.md`) → vuelve a leer los chunks → marca revisada →
 publica. Crear o borrar una corrección **nunca** lanza el reproceso.
 
+**Campo `corrections_dirty` (bool) en `VersionSummary`** (`GET /admin/documents`
+→ `documents[].versions[]`, `GET /admin/versions/{id}` → `version`, y toda
+respuesta `{document, version}`), y también en la respuesta de POST/DELETE de
+correcciones. `true` = hay correcciones creadas o borradas que el paso `chunk`
+de la ingesta aún no ha aplicado: los chunks que se ven no las reflejan.
+Mientras sea `true`, `PATCH requires_review=false` y `publish` responden **409
+`corrections_pending`**; hay que reprocesar. Lo mantiene D1: cada alta o borrado
+lógico pone la columna a 1 e incrementa `corrections_rev` (triggers, misma
+transacción), y solo la ingesta la limpia cuando aplica exactamente el conjunto
+que leyó (compare-and-set sobre `corrections_rev`). Una corrección creada
+mientras el Workflow ya había leído las correcciones deja la marca a 1 aunque
+la versión acabe en `review_required`. El panel puede usarla para mostrar
+«correcciones pendientes de reprocesar» y deshabilitar «marcar revisada» y
+«publicar».
+
 - **`GET /admin/versions/{id}/chunks`**: query `offset` (entero ≥ 0, por
   defecto 0) y `limit` (1..100, por defecto 50); otros parámetros → 422.
   Cualquier estado (también `published`); sin chunks devuelve `total: 0` y
   `chunks: []`. Cada chunk:
   `{ordinal, id, section|null, page_start, page_end, text, chunker_version|null}`
   ordenados por `ordinal` (`chunker_version` es el de la versión).
-- **`GET /admin/versions/{id}/corrections`**: todas, por `created_at, id`. Cada
-  una: `{id, version_id, page_number, find_text, replace_text, reason,
+- **`GET /admin/versions/{id}/corrections`**: todas, por `created_at` y, a
+  igualdad, orden de inserción (`rowid`; el id es aleatorio y no desempata).
+  Cada una: `{id, version_id, page_number, find_text, replace_text, reason,
   created_at, deleted_at|null, active}` (`active = deleted_at is null`).
+  `match_rule` es el texto de ayuda con la regla de coincidencia
+  (`domain/admin.MATCH_RULE_HELP`, también en la descripción OpenAPI de
+  `find_text`).
 - **`POST /admin/versions/{id}/corrections`**: JSON estricto
   `{page_number, find_text, replace_text, reason}`, sin campos extra ni
   coerción (`page_number` entero ≥ 1, no `"2"`, `2.0` ni `true`). `find_text`
   1..500 caracteres tras recortar espacios; `replace_text` 0..500, se guarda tal
   cual (vacío = borrar ruido) y debe ser distinto de `find_text`; `reason`
-  1..300 tras recortar. Sin caracteres de control salvo tabulador y saltos de
-  línea. `page_number > page_count` (si ya se conoce) → 422 `page_out_of_range`
+  1..300 tras recortar. Sin caracteres de control (Unicode `Cc`) salvo
+  tabulador y saltos de línea, ni de formato (`Cf`): controles bidi
+  (U+202A–U+202E, U+2066–U+2069), espacios de ancho cero, guion suave, BOM y
+  también ZWJ/ZWNJ (U+200D/U+200C). Decisión: son invisibles en el panel (una
+  corrección podría parecer distinta de lo que hace), el español no los
+  necesita y la normalización de la ingesta los elimina del texto de la
+  página, así que un `find_text` con ellos nunca correspondería a lo que vio
+  el administrador. `page_number > page_count` (si ya se conoce) → 422 `page_out_of_range`
   (el esquema lo vuelve a comprobar). Versión `published` → 409
   `version_published` (despublicar primero; también lo impone un trigger). Una
   corrección activa con la misma página y el mismo `find_text` → 409
   `duplicate_correction`. Máximo 100 activas por versión → 409
-  `too_many_corrections`. Id `cor_<uuid hex>`. Inserta la fila, un evento
-  `correct` y, en el mismo `batch`, pone `requires_review = 1` y pasa
+  `too_many_corrections`. Ambas reglas se comprueban primero en el servicio
+  (mensaje claro) y otra vez de forma atómica en D1: índice único parcial
+  `(version_id, page_number, find_text) WHERE deleted_at IS NULL` y un
+  `INSERT … SELECT … WHERE (count activas) < 100 RETURNING id` en una sola
+  sentencia, así que dos peticiones concurrentes no los superan (la violación
+  se traduce al mismo 409). Id `cor_<uuid hex>`. Inserta la fila, un evento
+  `correct` (solo si se insertó) y, en el mismo `batch`, pone
+  `corrections_dirty = 1` (trigger), `requires_review = 1` y pasa
   `ready`/`unpublished` → `review_required`: con una corrección pendiente la
   versión no puede publicarse sin una nueva revisión (decisión añadida al
   diseño para no publicar por descuido un texto sin corregir). Respuesta 201:
   `{"correction": {...}, "version_status": "review_required",
-  "requires_review": true, "reprocess_required": true, "message": "El cambio se
-  aplicará cuando se reprocese la versión ..."}`.
+  "requires_review": true, "corrections_dirty": true, "reprocess_required": true,
+  "message": "El cambio se aplicará cuando se reprocese la versión ..."}`.
 - **`DELETE /admin/versions/{id}/corrections/{cid}`**: borrado lógico
   (`deleted_at`), idempotente: repetirlo devuelve 200 con la misma corrección sin
   nuevo evento ni cambio de estado. La primera vez registra `correct`
   (`correction_deleted`) y aplica la misma regla de revisión que el POST. `cid`
   de otra versión o inexistente → 404 `correction_not_found`; versión
   `published` → 409 `version_published`. Las filas nunca se borran físicamente.
-- La aplicación (coincidencia exacta una vez, normalización de espacios) la hace
-  la ingesta: si una corrección no aplica, el reproceso deja la versión en
+- **Regla de coincidencia** (`MATCH_RULE_HELP`): `find_text` se busca en el
+  texto preparado de su página física, el mismo que muestran los chunks:
+  normalizado, sin cabeceras/pies repetidos (solo queda su primera aparición) y
+  con las tablas HTML convertidas a filas Markdown (`| celda | celda |`,
+  entidades decodificadas, sin etiquetas). Se copia desde un chunk de esa
+  página; literal salvo espacios (cualquier secuencia de espacios o saltos
+  equivale a otra); exactamente una aparición, contando las solapadas.
+- La aplicación la hace la ingesta: si una corrección no aplica, el reproceso deja la versión en
   `failed` con `error_code = correction_not_applicable` y `error_detail =
   "step=chunk correction=<cid> page=<n> matches=<k>"` (visible en
   `GET /admin/versions/{id}`); se borra o se rehace la corrección y se reprocesa.
@@ -246,7 +296,7 @@ Bindings (`wrangler.jsonc`): `RAG` (service binding), `DB` (D1 `unitropico`,
 `REPLACE_WITH_D1_DATABASE_ID` hasta crear la base), `DOCUMENTS` (R2
 `unitropico-documents`) e `INGESTION` (Workflow `ingestion`, clase
 `IngestionWorkflow`, script `unitropico-ingestion`), `CHAT_LIMITER` y
-`RETRIEVAL_LIMITER` (Rate Limiting, ver abajo). Claves verificadas contra
+`RETRIEVAL_LIMITER` y `ADMIN_AUTH_LIMITER` (Rate Limiting, ver abajo). Claves verificadas contra
 `config-schema.json` de Wrangler 4.165.0 (cache npx local; el archivo valida
 con `jsonschema` contra ese esquema).
 
@@ -261,15 +311,26 @@ simultáneos) y cada `/chat` cuesta una llamada al LLM (ARQUITECTURA.md §6).
 
 | Binding | Ruta | Cuota por defecto | `namespace_id` |
 | --- | --- | --- | --- |
-| `CHAT_LIMITER` | `POST /chat` | 10 peticiones / 60 s por cliente | `"1001"` |
+| `CHAT_LIMITER` | `POST /chat` | 20 peticiones / 60 s por cliente | `"1001"` |
 | `RETRIEVAL_LIMITER` | `POST /retrieval/query` | 30 peticiones / 60 s por cliente | `"1002"` |
+| `ADMIN_AUTH_LIMITER` | `/admin/*`, solo intentos fallidos (401) | 10 / 60 s por cliente | `"1003"` |
+
+Trade-off del NAT de campus: el chat sube de 10 a 20 por minuto porque muchos
+estudiantes pueden compartir una IP pública; si aparecen 429 legítimos, ajustar
+`limit` en `wrangler.jsonc`.
+
+`ADMIN_AUTH_LIMITER` solo se consulta cuando la autenticación temprana de
+`/admin/*` falla (401). Al excederse responde 429 `rate_limited` con
+`Retry-After: 60`. Es fail-open con un WARNING en el log; los 503
+(`admin_disabled`) y los 413/411 no cuentan. Las peticiones admin autenticadas
+no pasan por ningún limitador.
 
 **Cambiar la cuota**: editar `ratelimits[].simple` en `wrangler.jsonc`
 (`limit` entero; `period` solo admite **10 o 60** segundos según el esquema de
 Wrangler 4.165.0 y la documentación) y redesplegar; el código no conoce los
 valores. `namespace_id` es una cadena con un entero positivo **único en la
 cuenta** (dos bindings con el mismo id comparten contadores, incluso entre
-Workers): revisar que `1001`/`1002` no estén en uso antes de desplegar.
+Workers): revisar que `1001`/`1002`/`1003` no estén en uso antes de desplegar.
 `Retry-After` es fijo a 60 (el periodo máximo); si se usa `period: 10` sigue
 siendo una cota superior válida.
 
@@ -287,15 +348,21 @@ siendo una cota superior válida.
   `WorkersRateLimiter(lambda: request_binding("CHAT_LIMITER" | "RETRIEVAL_LIMITER"))`.
 - El límite se evalúa como dependencia de la ruta: antes del servicio y por tanto
   **antes de llamar al RAG/LLM** (también antes de la validación del cuerpo: un
-  cliente sobre la cuota recibe 429 aunque el JSON sea inválido). Las rutas
-  `/admin/*`, `/health` y `/docs` no se limitan.
+  cliente sobre la cuota recibe 429 aunque el JSON sea inválido). `/health` y
+  `/docs` no se limitan; en `/admin/*` solo cuentan los 401 (`ADMIN_AUTH_LIMITER`).
 
-**Clave del cliente**: `CF-Connecting-IP` (la pone Cloudflare con la IP del
-cliente) → `HMAC-SHA256(salt, ip)` truncado a 32 hex; el salt es el secret
+**Clave del cliente**: HMAC-SHA256 (sal `RATE_LIMIT_SALT`), truncado a 32 hex,
+de `CF-Connecting-IP` (la pone Cloudflare con la IP del cliente) normalizada:
+- IPv4: la IP completa.
+- IPv6: el prefijo /64 (un cliente suele controlar un /64 entero).
+- IPv4-mapped (`::ffff:a.b.c.d`) se trata como IPv4; si falta o es inválida, la
+  clave es `anonymous`.
+
+El salt es el secret
 `RATE_LIMIT_SALT` o, si falta/está vacío, el valor por defecto documentado
 `unitropico-rate-limit-v1` (no es secreto: solo evita pasar IPs en claro al
-limitador). Sin cabecera (desarrollo local) la clave es `anonymous` (todos
-comparten cuota). La IP y la clave **nunca se registran**: los logs son
+limitador). Sin cabecera (desarrollo local) todos comparten la cuota de
+`anonymous`. La IP y la clave **nunca se registran**: los logs son
 `rate limited route=chat` (INFO) y `rate limiter unavailable route=... reason=...
 fail=open|closed` (WARNING). Limitaciones conocidas: Cloudflare desaconseja
 claves por IP porque NAT/redes móviles/proxys comparten IP (un campus detrás de

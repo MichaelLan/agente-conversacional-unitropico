@@ -9,6 +9,7 @@ from admin_fakes import FakeD1
 from test_admin import Admin, error_code
 
 from unitropico_api.domain.admin import (
+    MATCH_RULE_HELP,
     MAX_ACTIVE_CORRECTIONS,
     Conflict,
     InvalidInput,
@@ -179,10 +180,12 @@ def test_create_correction_records_and_does_not_reprocess(admin):
         "correction",
         "version_status",
         "requires_review",
+        "corrections_dirty",
         "reprocess_required",
         "message",
     }
     assert body["reprocess_required"] is True
+    assert body["corrections_dirty"] is True
     # A pending correction invalidates the review: ready -> review_required.
     assert (body["version_status"], body["requires_review"]) == (
         "review_required",
@@ -234,6 +237,15 @@ def test_replace_text_is_kept_verbatim_and_may_be_empty(admin):
         {"reason": ""},
         {"reason": "x" * 301},
         {"find_text": "igual\x00a"},
+        # Unicode format characters (Cf): bidi overrides/isolates, zero-width,
+        # ZWJ/ZWNJ, soft hyphen and BOM are invisible in the panel.
+        {"find_text": "igual\u202ea 3.0"},
+        {"find_text": "igual\u2066a"},
+        {"replace_text": "igual\u200bo superior"},
+        {"replace_text": "igual\u200do superior"},
+        {"replace_text": "igual\u200co superior"},
+        {"reason": "Cotejo\u00ad"},
+        {"reason": "\ufeffCotejo"},
         {"replace_text": None},
         {"find_text": "igual", "replace_text": "igual"},
         {"extra": 1},
@@ -291,6 +303,7 @@ def test_published_version_refuses_corrections(admin):
     """409 version_published for create and delete; nothing is written."""
     version_id = admin.ready()
     _, _, created = create(admin, version_id)
+    admin.db.apply_corrections(version_id)  # the reprocess applied it
     assert admin.patch(version_id, {"requires_review": False})[0] == 200
     status, _, _ = admin.action(version_id, "publish")
     assert status == 200
@@ -310,15 +323,19 @@ def test_correction_on_unpublished_version_requires_review_again(admin):
     assert admin.action(version_id, "unpublish")[0] == 200
     status, _, body = create(admin, version_id)
     assert status == 201 and body["version_status"] == "review_required"
+    admin.db.apply_corrections(version_id)  # the reprocess applied it
     assert admin.patch(version_id, {"requires_review": False})[0] == 200
     assert admin.db.version(version_id)["status"] == "ready"
     path = corrections_path(version_id, f"/{body['correction']['id']}")
     status, _, deleted = admin.request("DELETE", path)
     assert status == 200 and deleted["version_status"] == "review_required"
-    # Repeating the delete changes nothing else.
+    assert deleted["corrections_dirty"] is True
+    # Repeating the delete changes nothing else (not even the pending flag).
+    admin.db.apply_corrections(version_id)
     assert admin.patch(version_id, {"requires_review": False})[0] == 200
     status, _, again = admin.request("DELETE", path)
     assert status == 200 and again["version_status"] == "ready"
+    assert again["corrections_dirty"] is False
 
 
 def test_duplicate_active_correction_is_409(admin):
@@ -387,7 +404,11 @@ def test_list_empty(admin):
     version_id = admin.uploaded()
     status, _, body = admin.request("GET", corrections_path(version_id))
     assert status == 200
-    assert body == {"version_id": version_id, "corrections": []}
+    assert body == {
+        "version_id": version_id,
+        "corrections": [],
+        "match_rule": MATCH_RULE_HELP,
+    }
 
 
 def test_delete_unknown_or_foreign_correction_is_404(admin):
@@ -449,3 +470,134 @@ def test_statements_match_canonical_queries(constant, name):
     """The adapter SQL is the canonical SQL of infra/d1/queries.sql."""
     sql = " ".join(getattr(d1_module, constant).split())
     assert sql == _canonical(name)
+
+
+# --- pending corrections (corrections_dirty) ------------------------------------
+
+
+def test_unapplied_correction_blocks_review_and_publish(admin):
+    """Reviewer bypass: create -> PATCH requires_review=false -> publish is refused."""
+    version_id = admin.ready()
+    status, _, body = create(admin, version_id)
+    assert status == 201 and body["version_status"] == "review_required"
+    status, _, body = admin.patch(version_id, {"requires_review": False})
+    assert status == 409 and error_code(body) == "corrections_pending"
+    status, _, body = admin.action(version_id, "publish")
+    assert status == 409
+    row = admin.db.version(version_id)
+    assert (row["status"], row["corrections_dirty"]) == ("review_required", 1)
+    # After a reprocess applies the correction both steps succeed.
+    admin.db.apply_corrections(version_id)
+    assert admin.patch(version_id, {"requires_review": False})[0] == 200
+    status, _, body = admin.action(version_id, "publish")
+    assert status == 200 and body["version"]["corrections_dirty"] is False
+
+
+def test_correction_created_during_the_workflow_blocks_publish(admin):
+    """A correction created after the chunk step read keeps the version dirty."""
+    version_id = admin.ready()
+    # The Workflow finished (ready, reviewed) but a correction arrived after the
+    # chunk step read the corrections: the flag stayed set.
+    admin.db.sql(
+        "INSERT INTO text_corrections (id, version_id, page_number, find_text, "
+        "replace_text, reason) VALUES ('cor_late', ?, 1, 'a', 'b', 'r')",
+        version_id,
+    )
+    row = admin.db.version(version_id)
+    assert (row["status"], row["requires_review"], row["corrections_dirty"]) == (
+        "ready",
+        0,
+        1,
+    )
+    status, _, body = admin.action(version_id, "publish")
+    assert status == 409 and error_code(body) == "corrections_pending"
+    status, _, body = admin.patch(version_id, {"requires_review": False})
+    assert status == 409 and error_code(body) == "corrections_pending"
+    assert admin.db.version(version_id)["status"] == "ready"
+
+
+def test_repository_guards_pending_corrections_against_races(admin):
+    """If the flag is set after the service check, the SQL guards still refuse."""
+    version_id = admin.ready()
+    repo = D1DocumentRepository(lambda: admin.db)
+    admin.db.sql(
+        "INSERT INTO text_corrections (id, version_id, page_number, find_text, "
+        "replace_text, reason) VALUES ('cor_late', ?, 1, 'a', 'b', 'r')",
+        version_id,
+    )
+    with pytest.raises(Conflict) as info:
+        asyncio.run(repo.publish(version_id))
+    assert info.value.code == "corrections_pending"
+    admin.db.sql(
+        "UPDATE document_versions SET requires_review = 1, status = "
+        "'review_required' WHERE id = ?",
+        version_id,
+    )
+    with pytest.raises(Conflict) as info:
+        asyncio.run(repo.update_metadata(version_id, {}, {"requires_review": False}))
+    assert info.value.code == "corrections_pending"
+    assert admin.db.version(version_id)["requires_review"] == 1
+    # Other metadata edits stay possible while corrections are pending.
+    view = asyncio.run(repo.update_metadata(version_id, {}, {"version_label": "v2"}))
+    assert view.version.version_label == "v2" and view.version.corrections_dirty
+
+
+def test_corrections_dirty_is_exposed_in_version_dtos(admin):
+    """List and detail carry corrections_dirty; a reprocess clears it."""
+    version_id = admin.ready()
+    _, _, listed = admin.request("GET", "/admin/documents")
+    [version] = listed["documents"][0]["versions"]
+    assert version["corrections_dirty"] is False
+    create(admin, version_id)
+    _, _, listed = admin.request("GET", "/admin/documents")
+    assert listed["documents"][0]["versions"][0]["corrections_dirty"] is True
+    _, _, detail = admin.request("GET", f"/admin/versions/{version_id}")
+    assert detail["version"]["corrections_dirty"] is True
+    admin.db.apply_corrections(version_id)
+    _, _, detail = admin.request("GET", f"/admin/versions/{version_id}")
+    assert detail["version"]["corrections_dirty"] is False
+
+
+def test_repository_enforces_cap_and_duplicates_atomically():
+    """Concurrent requests that passed the service checks are still refused."""
+    admin = Admin()
+    version_id = admin.ready()
+    repo = D1DocumentRepository(lambda: admin.db)
+
+    def new(cid: str, find: str, page: int = 1) -> NewCorrection:
+        return NewCorrection(cid, version_id, page, find, "x", "r")
+
+    asyncio.run(repo.create_correction(new("cor_a", "igual")))
+    with pytest.raises(Conflict) as info:
+        asyncio.run(repo.create_correction(new("cor_b", "igual")))
+    assert info.value.code == "duplicate_correction"
+    for n in range(MAX_ACTIVE_CORRECTIONS - 1):
+        asyncio.run(repo.create_correction(new(f"cor_{n}", f"texto {n}")))
+    rev = admin.db.version(version_id)["corrections_rev"]
+    events = len(correct_events(admin.db, version_id))
+    with pytest.raises(Conflict) as info:
+        asyncio.run(repo.create_correction(new("cor_extra", "otro texto")))
+    assert info.value.code == "too_many_corrections"
+    assert admin.db.sql(
+        "SELECT count(*) AS n FROM text_corrections WHERE id = 'cor_extra'"
+    ) == [{"n": 0}]
+    assert admin.db.version(version_id)["corrections_rev"] == rev
+    assert len(correct_events(admin.db, version_id)) == events
+    # The SQL cap is the domain cap.
+    assert f"< {MAX_ACTIVE_CORRECTIONS} " in d1_module.INSERT_CORRECTION
+
+
+def test_list_order_is_creation_then_insertion(admin):
+    """Equal created_at never falls back to the random id."""
+    version_id = admin.ready()
+    for cid in ("cor_z", "cor_a", "cor_m"):
+        admin.db.sql(
+            "INSERT INTO text_corrections (id, version_id, page_number, find_text, "
+            "replace_text, reason, created_at) VALUES (?, ?, 1, ?, 'x', 'r', "
+            "'2030-01-01T00:00:00.000Z')",
+            cid,
+            version_id,
+            cid,
+        )
+    _, _, listed = admin.request("GET", corrections_path(version_id))
+    assert [c["id"] for c in listed["corrections"]] == ["cor_z", "cor_a", "cor_m"]

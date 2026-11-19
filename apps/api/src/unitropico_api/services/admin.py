@@ -5,12 +5,15 @@ from typing import Protocol
 from unitropico_api.core.logger import get_logger
 from unitropico_api.domain.admin import (
     ACTIVE_WORKFLOW_STATUSES,
+    CORRECTIONS_PENDING,
     DEFAULT_MAX_UPLOAD_BYTES,
+    DUPLICATE_CORRECTION,
     MAX_ACTIVE_CORRECTIONS,
     PDF_MAGIC,
     PUBLISHABLE,
     REPROCESSABLE,
     REVIEWABLE,
+    TOO_MANY_CORRECTIONS,
     ChunkPage,
     ChunkReview,
     Conflict,
@@ -303,11 +306,14 @@ class AdminService:
             await self._check_supersedes(
                 documents, current.document_id, version_id, supersedes
             )
-        if changes.get("requires_review") is False and current.status not in REVIEWABLE:
-            raise Conflict(
-                "review_not_available",
-                "Solo se puede marcar como revisada una versión procesada.",
-            )
+        if changes.get("requires_review") is False:
+            if current.status not in REVIEWABLE:
+                raise Conflict(
+                    "review_not_available",
+                    "Solo se puede marcar como revisada una versión procesada.",
+                )
+            if current.corrections_dirty:
+                raise Conflict(*CORRECTIONS_PENDING)
         document = {k: v for k, v in changes.items() if k in DOCUMENT_FIELDS}
         version = {k: v for k, v in changes.items() if k in VERSION_FIELDS}
         result = await documents.update_metadata(version_id, document, version)
@@ -353,6 +359,8 @@ class AdminService:
                 "invalid_status_transition",
                 f"No se puede publicar una versión en estado {current.status}.",
             )
+        if current.corrections_dirty:
+            raise Conflict(*CORRECTIONS_PENDING)
         if current.requires_review:
             raise Conflict(
                 "review_required", "La versión debe revisarse antes de publicarse."
@@ -444,20 +452,16 @@ class AdminService:
                 "page_out_of_range",
                 f"La versión tiene {current.page_count} páginas.",
             )
+        # Fast path with a clear message; the INSERT re-checks both atomically
+        # (count in the same statement, partial unique index) against races.
         active = [c for c in await documents.list_corrections(version_id) if c.active]
         if len(active) >= MAX_ACTIVE_CORRECTIONS:
-            raise Conflict(
-                "too_many_corrections",
-                f"La versión ya tiene {MAX_ACTIVE_CORRECTIONS} correcciones activas.",
-            )
+            raise Conflict(*TOO_MANY_CORRECTIONS)
         if any(
             c.page_number == body.page_number and c.find_text == body.find_text
             for c in active
         ):
-            raise Conflict(
-                "duplicate_correction",
-                "Ya existe una corrección activa para ese texto en esa página.",
-            )
+            raise Conflict(*DUPLICATE_CORRECTION)
         created = await documents.create_correction(
             NewCorrection(
                 id=f"cor_{uuid.uuid4().hex}",
@@ -503,6 +507,7 @@ class AdminService:
             correction=correction,
             version_status=version.status,
             requires_review=version.requires_review,
+            corrections_dirty=version.corrections_dirty,
         )
 
     @staticmethod
