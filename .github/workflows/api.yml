@@ -5,12 +5,12 @@ on:
     paths:
       - 'apps/api/**'
       - '.github/workflows/api.yml'
-      - 'ARQUITECTURA.md'
+      - 'infra/d1/**'
   pull_request:
     paths:
       - 'apps/api/**'
       - '.github/workflows/api.yml'
-      - 'ARQUITECTURA.md'
+      - 'infra/d1/**'
   workflow_dispatch:
 
 permissions:

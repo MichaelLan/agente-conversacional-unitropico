@@ -4,5 +4,22 @@
   "compatibility_date": "2026-11-08",
   "compatibility_flags": ["python_workers"],
   "workers_dev": false,
-  "services": [{"binding": "RAG", "service": "unitropico-rag-poc"}]
+  "services": [{"binding": "RAG", "service": "unitropico-rag-poc"}],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "unitropico",
+      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+      "migrations_dir": "../../infra/d1/migrations"
+    }
+  ],
+  "r2_buckets": [{"binding": "DOCUMENTS", "bucket_name": "unitropico-documents"}],
+  "workflows": [
+    {
+      "binding": "INGESTION",
+      "name": "ingestion",
+      "class_name": "IngestionWorkflow",
+      "script_name": "unitropico-ingestion"
+    }
+  ]
 }

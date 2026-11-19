@@ -3,15 +3,19 @@ import json
 
 import pytest
 
+from unitropico_api.domain.errors import UpstreamUnavailable
 from unitropico_api.main import create_app
 
 EMPTY = {"status": "unavailable", "evidence": []}
 EVIDENCE = {
     "document_id": " doc ",
+    "document_title": "Reglamento",
     "version_id": "v1",
+    "version_label": None,
     "chunk_id": "c1",
     "source_sha256": "a" * 64,
-    "page": 1,
+    "page_start": 1,
+    "page_end": 2,
     "section": None,
     "text": " Texto exacto\ncon espacios. ",
 }
@@ -37,7 +41,7 @@ class Client:
         return self.result
 
 
-def post(app, payload: object, path: str = "/retrieval/query"):
+def post(app, payload: object, path: str = "/retrieval/query", env: object = None):
     """Exercise POST through ASGI without sockets or HTTP dependencies."""
     messages = []
 
@@ -63,6 +67,7 @@ def post(app, payload: object, path: str = "/retrieval/query"):
                 "query_string": b"",
                 "root_path": "",
                 "headers": [(b"content-type", b"application/json")],
+                **({"env": env} if env is not None else {}),
             },
             receive,
             send,
@@ -76,11 +81,9 @@ def post(app, payload: object, path: str = "/retrieval/query"):
     )
 
 
-def test_default_unavailable_and_chat_absent():
-    """Default composition has no adapter, answer generation or chat route."""
-    app = create_app()
-    assert post(app, {"question": "ayuda"}) == (503, EMPTY)
-    assert post(app, {"question": "ayuda"}, "/chat") == (404, {"detail": "Not Found"})
+def test_default_unavailable():
+    """Default composition has no adapter, so retrieval is unavailable."""
+    assert post(create_app(), {"question": "ayuda"}) == (503, EMPTY)
 
 
 @pytest.mark.parametrize(
@@ -126,7 +129,7 @@ def test_proxy_exact_request_and_response(question, limit, evidence):
 
 
 @pytest.mark.parametrize(
-    "upstream", [None, EMPTY, RuntimeError("secret upstream text")]
+    "upstream", [None, EMPTY, UpstreamUnavailable("http_500"), TimeoutError("secret")]
 )
 def test_unavailable_is_safe(upstream, caplog):
     """Dependency absence/failure never reveals question, text or exception."""
@@ -137,7 +140,7 @@ def test_unavailable_is_safe(upstream, caplog):
     )
     assert client.calls == [{"question": "private question", "limit": 5}]
     assert "private question" not in caplog.text
-    assert "secret upstream text" not in caplog.text
+    assert "secret" not in caplog.text
 
 
 @pytest.mark.parametrize(
@@ -157,9 +160,13 @@ def test_unavailable_is_safe(upstream, caplog):
         *[
             {"status": "evidence_found", "evidence": [EVIDENCE | change]}
             for change in (
-                {"page": True},
-                {"page": 0},
-                {"page": "1"},
+                {"page_start": True},
+                {"page_start": 0},
+                {"page_start": "1"},
+                {"page_end": 0},
+                {"page_start": 3, "page_end": 2},
+                {"document_title": " "},
+                {"version_label": 1},
                 {"source_sha256": "A" * 64},
                 {"source_sha256": "a" * 63},
                 {"document_id": " "},

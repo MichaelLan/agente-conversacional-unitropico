@@ -5,7 +5,7 @@ import pytest
 from test_app import request
 from test_retrieval import EMPTY, EVIDENCE, Client, post
 
-from unitropico_api.domain.retrieval import MalformedUpstream
+from unitropico_api.domain.errors import MalformedUpstream
 from unitropico_api.infra.service_binding import RagServiceBindingClient
 from unitropico_api.main import create_app
 

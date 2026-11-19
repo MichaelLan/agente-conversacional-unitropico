@@ -10,6 +10,9 @@ from fastapi import FastAPI
 from pydantic import ValidationError
 from starlette.types import Message
 
+from unitropico_api.core.settings import Settings
+from unitropico_api.main import create_app
+
 
 def make_app() -> FastAPI:
     """Construye la aplicación por su única entrada pública de composición."""
@@ -108,7 +111,7 @@ def test_invalid_level_fails_before_logging(
 
 
 def test_configuration_boundary() -> None:
-    """Restringe acceso al entorno e importación de settings a sus responsables."""
+    """Solo la composición lee el entorno o importa settings."""
     make_app()
     source = Path(__file__).parents[1] / "src" / "unitropico_api"
     settings_importers = set()
@@ -125,4 +128,27 @@ def test_configuration_boundary() -> None:
                 if any(alias.name == "os" for alias in node.names):
                     environment_readers.add(path.relative_to(source).as_posix())
     assert settings_importers == {"main.py"}
-    assert environment_readers == {"core/settings.py"}
+    assert environment_readers == {"main.py"}
+
+
+def test_settings_from_mapping_defaults_and_overrides() -> None:
+    """Construye settings desde un mapping, con defaults documentados."""
+    default = Settings.from_mapping({})
+    assert default.expose_docs is False
+    assert default.rag_retrieval_timeout_seconds == 10
+    assert default.rag_answer_timeout_seconds == 45
+    custom = Settings.from_mapping(
+        {"EXPOSE_DOCS": "true", "RAG_ANSWER_TIMEOUT_SECONDS": "30", "OTHER": "x"}
+    )
+    assert custom.expose_docs is True
+    assert custom.rag_answer_timeout_seconds == 30
+    with pytest.raises(ValidationError, match="rag_answer_timeout_seconds"):
+        Settings.from_mapping({"RAG_ANSWER_TIMEOUT_SECONDS": "0"})
+
+
+@pytest.mark.parametrize("expose", [False, True])
+def test_docs_flag(expose: bool) -> None:
+    """Expone /docs, /redoc y /openapi.json solo con EXPOSE_DOCS."""
+    app = create_app(settings=Settings(expose_docs=expose))
+    for path in ("/docs", "/redoc", "/openapi.json"):
+        assert request(app, path)[0]["status"] == (200 if expose else 404)

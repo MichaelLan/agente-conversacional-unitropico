@@ -18,24 +18,34 @@ class RetrievalQuery(BaseModel):
 
 
 class EvidenceResponse(BaseModel):
-    """Preserve exact source identity/text and physical PDF page, never URLs."""
+    """Preserve exact source identity/text and physical PDF pages, never URLs."""
 
     model_config = ConfigDict(strict=True, extra="forbid")
     document_id: str
+    document_title: str
     version_id: str
+    version_label: str | None
     chunk_id: str
     source_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
-    page: int = Field(ge=1)
+    page_start: int = Field(ge=1)
+    page_end: int = Field(ge=1)
     section: str | None
     text: str
 
-    @field_validator("document_id", "version_id", "chunk_id", "text")
+    @field_validator("document_id", "document_title", "version_id", "chunk_id", "text")
     @classmethod
     def require_nonblank(cls, value: str) -> str:
         """Reject blank values without altering valid evidence."""
         if not value.strip():
             raise ValueError("Evidence identity and text must not be blank")
         return value
+
+    @model_validator(mode="after")
+    def require_page_range(self) -> Self:
+        """Require a non-inverted physical page range."""
+        if self.page_end < self.page_start:
+            raise ValueError("page_end must not precede page_start")
+        return self
 
 
 class RetrievalResponse(BaseModel):
@@ -53,7 +63,3 @@ class RetrievalResponse(BaseModel):
         if (self.status == "evidence_found") != bool(self.evidence):
             raise ValueError("Status and evidence must agree")
         return self
-
-
-class MalformedUpstream(Exception):
-    """Signal a rejected dependency payload without exposing its contents."""

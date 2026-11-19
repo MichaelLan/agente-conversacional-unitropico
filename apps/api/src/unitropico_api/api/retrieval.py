@@ -1,10 +1,7 @@
 from fastapi import APIRouter, Response
 
-from unitropico_api.domain.retrieval import (
-    MalformedUpstream,
-    RetrievalQuery,
-    RetrievalResponse,
-)
+from unitropico_api.domain.errors import MalformedUpstream
+from unitropico_api.domain.retrieval import RetrievalQuery, RetrievalResponse
 from unitropico_api.services.retrieval import QueryCoordinationService
 
 
@@ -27,7 +24,7 @@ def create_retrieval_router(service: QueryCoordinationService) -> APIRouter:
         Extra fields, including privileged roles, are rejected (422).
         Missing configuration/dependency failure returns 503; invalid upstream
         returns 502. Both use unavailable with empty evidence and no diagnostics.
-        Page is physical, section nullable, and identity/text remain unchanged.
+        Pages are physical (start/end); section is nullable; text is unchanged.
         No live API→RAG transport is configured by default.
         """
         try:
