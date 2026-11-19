@@ -30,10 +30,11 @@ const props = defineProps<{
 const open = defineModel<boolean>('open', { required: true })
 const emit = defineEmits<{ save: [patch: VersionPatch]; action: [action: VersionAction]; changed: [id: string] }>()
 
-type Tab = 'summary' | 'text' | 'corrections'
+type Tab = 'summary' | 'text' | 'pages' | 'corrections'
 const TABS = [
   { value: 'summary', label: 'Resumen' },
   { value: 'text', label: 'Texto extraído' },
+  { value: 'pages', label: 'Páginas' },
   { value: 'corrections', label: 'Correcciones' },
 ] satisfies { value: Tab; label: string }[]
 const isTab = (value: unknown): value is Tab => TABS.some(item => item.value === value)
@@ -42,7 +43,7 @@ function selectTab(value: string | number): void {
 }
 const tab = ref<Tab>('summary')
 watch(() => props.detail?.version.id, () => { tab.value = 'summary' })
-const reviewSection = (): 'text' | 'corrections' => (tab.value === 'text' ? 'text' : 'corrections')
+const reviewSection = (): 'text' | 'pages' | 'corrections' => (tab.value === 'text' || tab.value === 'pages' ? tab.value : 'corrections')
 
 const editing = ref(false)
 watch(open, isOpen => {
@@ -172,7 +173,7 @@ function rows(): [string, string][] {
             color="neutral"
             aria-label="Secciones del detalle"
             class="-mx-4 sm:-mx-6"
-            :ui="{ list: 'px-4 sm:px-6', trigger: 'min-h-11 sm:min-h-0 shrink-0' }"
+            :ui="{ list: 'px-4 sm:px-6 overflow-x-auto', trigger: 'min-h-11 sm:min-h-0 shrink-0' }"
             @update:model-value="selectTab"
           />
 

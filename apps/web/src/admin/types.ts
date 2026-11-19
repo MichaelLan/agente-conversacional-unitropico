@@ -179,3 +179,50 @@ export interface CorrectionResult {
   reprocess_required: boolean
   message: string
 }
+
+export type PageSource = 'ocr' | 'override'
+
+/** GET /admin/versions/{id}/pages?page=N: texto preparado de una página. */
+export interface PageText {
+  version_id: string
+  page_number: number
+  page_count: number
+  text: string
+  source: PageSource
+  override_id: string | null
+  corrections_applied: string[]
+  chunker_version: string
+}
+
+export interface PageOverride {
+  id: string
+  version_id: string
+  page_number: number
+  text: string
+  reason: string
+  created_at: string
+  deleted_at: string | null
+  active: boolean
+}
+
+export interface PageOverrideList {
+  version_id: string
+  overrides: PageOverride[]
+}
+
+/** Cuerpo de POST /admin/versions/{id}/page-overrides. */
+export interface PageOverrideInput {
+  page_number: number
+  text: string
+  reason: string
+}
+
+/** Respuesta de crear/quitar una sustitución. */
+export interface PageOverrideResult {
+  override: PageOverride
+  version_status: VersionStatus
+  requires_review: boolean
+  corrections_dirty: boolean
+  reprocess_required: boolean
+  message: string
+}

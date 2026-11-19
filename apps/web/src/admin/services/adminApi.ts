@@ -10,6 +10,11 @@ import {
   type DocumentSummary,
   type DocumentWithVersions,
   type IngestionOutcome,
+  type PageOverride,
+  type PageOverrideInput,
+  type PageOverrideList,
+  type PageOverrideResult,
+  type PageText,
   type ProcessingEvent,
   type ReprocessResult,
   type UploadInput,
@@ -129,6 +134,33 @@ export function isCorrectionResult(value: unknown): value is CorrectionResult {
     && isStr(value.message)
 }
 
+export function isPageText(value: unknown): value is PageText {
+  return isRecord(value) && isStr(value.version_id) && isInt(value.page_number) && value.page_number >= 1
+    && isInt(value.page_count) && value.page_count >= value.page_number && isStr(value.text)
+    && (value.source === 'ocr' || value.source === 'override')
+    && isNullableStr(value.override_id)
+    && (value.source === 'override') === isStr(value.override_id)
+    && Array.isArray(value.corrections_applied) && value.corrections_applied.every(isStr)
+    && isStr(value.chunker_version)
+}
+
+export function isPageOverride(value: unknown): value is PageOverride {
+  return isRecord(value) && isStr(value.id) && isStr(value.version_id) && isInt(value.page_number)
+    && isStr(value.text) && isStr(value.reason) && isStr(value.created_at)
+    && isNullableStr(value.deleted_at) && typeof value.active === 'boolean'
+}
+
+export function isPageOverrideList(value: unknown): value is PageOverrideList {
+  return isRecord(value) && isStr(value.version_id)
+    && Array.isArray(value.overrides) && value.overrides.every(isPageOverride)
+}
+
+export function isPageOverrideResult(value: unknown): value is PageOverrideResult {
+  return isRecord(value) && isPageOverride(value.override) && isStatus(value.version_status)
+    && typeof value.requires_review === 'boolean' && typeof value.corrections_dirty === 'boolean'
+    && typeof value.reprocess_required === 'boolean' && isStr(value.message)
+}
+
 export type AdminErrorKind = 'unauthorized' | 'disabled' | 'server' | 'network' | 'timeout' | 'invalid_response'
 
 /** Error de la API admin: `message` es apto para mostrarse (del servidor o fijo). */
@@ -187,6 +219,10 @@ export interface AdminApi {
   listCorrections(id: string): Promise<CorrectionList>
   createCorrection(id: string, input: CorrectionInput): Promise<CorrectionResult>
   deleteCorrection(id: string, correctionId: string): Promise<CorrectionResult>
+  getPage(id: string, page: number): Promise<PageText>
+  listPageOverrides(id: string): Promise<PageOverrideList>
+  createPageOverride(id: string, input: PageOverrideInput): Promise<PageOverrideResult>
+  deletePageOverride(id: string, overrideId: string): Promise<PageOverrideResult>
 }
 
 /** Construye la URL de subida con los metadatos en query (sin token). */
@@ -273,5 +309,16 @@ export function createAdminApi({ getToken, fetcher, signal }: AdminApiOptions): 
     deleteCorrection: (id, correctionId) => call(
       versionPath(id, `/corrections/${encodeURIComponent(correctionId)}`),
       { method: 'DELETE' }, isCorrectionResult),
+    getPage: (id, page) => call(versionPath(id, `/pages?${new URLSearchParams({ page: String(page) }).toString()}`), {}, isPageText),
+    listPageOverrides: id => call(versionPath(id, '/page-overrides'), {}, isPageOverrideList),
+    createPageOverride: (id, input) => call(versionPath(id, '/page-overrides'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+      ok: [201],
+    }, isPageOverrideResult),
+    deletePageOverride: (id, overrideId) => call(
+      versionPath(id, `/page-overrides/${encodeURIComponent(overrideId)}`),
+      { method: 'DELETE' }, isPageOverrideResult),
   }
 }

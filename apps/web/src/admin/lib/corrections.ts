@@ -137,6 +137,7 @@ const CORRECT_DETAILS: Readonly<Record<string, string>> = {
   correction_created: 'Corrección creada',
   correction_deleted: 'Corrección borrada',
   correction_applied: 'Corrección aplicada',
+  override_applied: 'Sustitución de página aplicada',
 }
 
 /** Texto legible del evento: traduce detalles `correct`; el resto se muestra tal cual. */
