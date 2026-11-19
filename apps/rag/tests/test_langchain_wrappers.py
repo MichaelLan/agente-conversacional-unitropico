@@ -555,7 +555,9 @@ def test_metrics_log_has_phases_and_tokens_without_content(caplog):
     assert line == (
         "answer_metrics status=answered reason=- sources=1 retrieval_ms=1000.0 "
         "generation_ms=1000.0 validation_ms=1000.0 prompt_tokens=120 "
-        "completion_tokens=30 total_tokens=150"
+        "completion_tokens=30 total_tokens=150 followup_strategy=none "
+        "followup_used=none followup_fallback=false rewrite_ms=- rewrite_tokens=- "
+        "threshold=off below_threshold=false"
     )
     assert "SECRET" not in caplog.text and "prueba" not in caplog.text
 
@@ -574,7 +576,9 @@ def test_metrics_log_for_abstention_before_generation(caplog):
     assert (
         "answer_metrics status=abstained reason=no_evidence sources=0 "
         "retrieval_ms=500.0 generation_ms=- validation_ms=- prompt_tokens=- "
-        "completion_tokens=- total_tokens=-"
+        "completion_tokens=- total_tokens=- followup_strategy=none "
+        "followup_used=none followup_fallback=false rewrite_ms=- rewrite_tokens=- "
+        "threshold=off below_threshold=false"
     ) in caplog.text
 
 

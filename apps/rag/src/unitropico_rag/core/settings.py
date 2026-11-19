@@ -3,6 +3,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError
 
+from unitropico_rag.domain.answer import FollowupStrategy
 from unitropico_rag.domain.generation import ReasoningEffort
 
 # Settings field -> Workers binding/var/secret name.
@@ -22,6 +23,10 @@ ENV_NAMES: dict[str, str] = {
     "embedding_dimensions": "EMBEDDING_DIMENSIONS",
     "embedding_url": "EMBEDDING_URL",
     "embedding_timeout_seconds": "EMBEDDING_TIMEOUT_SECONDS",
+    "followup_strategy": "FOLLOWUP_STRATEGY",
+    "rewrite_max_tokens": "FOLLOWUP_REWRITE_MAX_TOKENS",
+    "rewrite_timeout_seconds": "FOLLOWUP_REWRITE_TIMEOUT_SECONDS",
+    "min_relevance": "MIN_RELEVANCE",
 }
 
 RetrievalMode = Literal["hybrid", "lexical", "semantic"]
@@ -56,6 +61,11 @@ class Settings(BaseModel):
         default="https://ai-gateway.vercel.sh/v1/embeddings", pattern="^https://"
     )
     embedding_timeout_seconds: float = Field(default=10, gt=0, le=60)
+    followup_strategy: FollowupStrategy = "concat"
+    rewrite_max_tokens: int = Field(default=256, ge=16, le=2048)
+    rewrite_timeout_seconds: float = Field(default=8, gt=0, le=60)
+    # Minimum cosine similarity (semantic channel); None disables the gate.
+    min_relevance: float | None = Field(default=None, gt=0, le=1)
 
     @classmethod
     def from_mapping(cls, mapping: Mapping[str, object]) -> Settings:

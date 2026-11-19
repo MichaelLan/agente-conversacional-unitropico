@@ -46,10 +46,12 @@ class GatewayFetch:
         }
 
 
-def compose(fetch=None, *, candidates=(CANDIDATE,), catalog=None, key="fake-key"):
+def compose(
+    fetch=None, *, candidates=(CANDIDATE,), catalog=None, key="fake-key", **overrides
+):
     """Build the real app through the composition root with fakes."""
     catalog = catalog or Catalog()
-    settings = Settings(ai_gateway_api_key=SecretStr(key) if key else None)
+    settings = Settings(ai_gateway_api_key=SecretStr(key) if key else None, **overrides)
     retriever = Retriever(candidates)
     app = build_app(
         settings, fetch=fetch or GatewayFetch(), retriever=retriever, catalog=catalog
@@ -96,9 +98,13 @@ def test_answered():
 
 
 def test_history_reaches_model_but_not_retrieval():
-    """History is model context only; retrieval uses the current question."""
+    """History is model context only; retrieval uses the current question.
+
+    Pinned to FOLLOWUP_STRATEGY=none; the default ``concat`` is covered in
+    ``test_followup.py``.
+    """
     fetch = GatewayFetch()
-    app, retriever, _ = compose(fetch)
+    app, retriever, _ = compose(fetch, followup_strategy="none")
     history = [
         {"role": "user", "content": "Soy estudiante de primer semestre"},
         {"role": "assistant", "content": "Entendido"},

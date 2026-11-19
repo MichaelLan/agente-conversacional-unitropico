@@ -4,7 +4,7 @@ Servicio interno (solo accesible por service binding desde `apps/api`) que
 recupera evidencia institucional, pide al LLM una respuesta en texto plano y
 valida cada cita contra el texto recuperado y el catálogo vigente.
 
-**Estado real (2026-11-18):** el contrato `/answer` v1 está implementado con
+**Estado real (2026-11-19):** el contrato `/answer` v1 está implementado con
 adaptadores reales de D1 (FTS5 + catálogo), Vectorize y embeddings, fusionados
 con RRF, orquestados sobre las interfaces de **LangChain Core 1.8.3**
 (`BaseRetriever`, `Embeddings`, `BaseChatModel`, `ChatPromptTemplate`, LCEL
@@ -42,7 +42,7 @@ Cada cita: `chunk_id, document_id, document_title, version_id, version_label,
 section, page_start, page_end, quote`. Todo sale del catálogo salvo `quote`, que
 se valida contra el chunk. Los motivos de abstención significan:
 
-- `no_evidence`: la recuperación funcionó pero no quedó evidencia admisible (no se llama al LLM).
+- `no_evidence`: la recuperación funcionó pero no quedó evidencia admisible, **o** la mejor similitud semántica quedó por debajo de `MIN_RELEVANCE` si está activado (`below_threshold=true` en `answer_metrics`). No se llama al LLM.
 - `model_abstained`: el modelo devolvió una abstención bien formada.
 - `invalid_output`: JSON inválido, claves duplicadas o extra, `answered` sin texto o sin citas, abstención con contenido.
 - `invalid_citation`: `chunk_id` desconocido o repetido, o `quote` no literal o demasiado corta.
@@ -55,14 +55,18 @@ No se normaliza Unicode (NFC/NFD): una tilde descompuesta no coincide. La cita
 devuelta lleva la quote ya normalizada.
 
 **Historial:** se envía al LLM como dato (`historial` dentro del JSON de usuario),
-no como mensajes con rol. La recuperación usa solo la pregunta actual;
-`AnswerService._retrieval_question` es el punto de extensión para una futura
-reformulación standalone. Si el contenido excede el presupuesto se descartan
+no como mensajes con rol. La generación recibe siempre la pregunta original y el
+historial; lo que se usa para **recuperar** depende de `FOLLOWUP_STRATEGY` (ver
+"Conversación y alcance"). Si el contenido excede el presupuesto se descartan
 primero los turnos más antiguos y después las fuentes de menor rango; si ni una
 fuente cabe, `503`.
 
 **Prompt** (`services/prompt.py`, español): solo evidencia dada, citar por
-`chunk_id` con quote literal, abstenerse si no basta o está fuera de alcance,
+`chunk_id` con quote literal, abstenerse si no basta o si la pregunta no trata de
+servicios, apoyos, programas, convocatorias o trámites de Bienestar
+Universitario/Fomento Socioeconómico (aunque las fuentes tengan palabras
+parecidas o se pudiera responder con conocimiento general; un seguimiento de un
+tema de Bienestar del historial sí está en alcance),
 exponer disposiciones distintas con su cita sin elegir, considerar la vigencia
 (`vigencia`, `vigente_desde`, `vigente_hasta` frente a `fecha_consulta`), no
 inventar requisitos/fechas/beneficios, texto plano sin Markdown. Por fuente se
@@ -168,6 +172,88 @@ pregunta ─┬─ D1LexicalRetriever (FTS5 bm25, solo publicadas) ──┐
   `BaseRetriever`/`Embeddings` de LangChain (ver arriba). `VectorRetriever`
   consume `aembed_query` (superficie de `Embeddings`).
 
+## Conversación y alcance
+
+Requisitos del proyecto: mantener el contexto durante una sesión e identificar
+si una consulta corresponde al alcance. El historial (máx. 6 turnos) lo envía
+el cliente; el RAG no persiste nada.
+
+### Pregunta de recuperación: `FOLLOWUP_STRATEGY`
+
+Una pregunta de seguimiento ("¿y cuáles son los requisitos?") no nombra el tema,
+así que recuperar solo con ella falla. `AnswerService._retrieval_question`
+decide el texto que va al retriever; **la generación sigue recibiendo la
+pregunta original + historial**.
+
+| Valor | Regla | Coste extra por consulta |
+| --- | --- | --- |
+| `none` | Solo la pregunta actual (comportamiento anterior). | 0 |
+| `concat` (defecto) | Si el historial tiene algún turno `user` **y** la pregunta actual tiene **≤ 10 palabras** (separadas por espacios, `CONCAT_MAX_WORDS`), se recupera con `"<última pregunta del usuario> <pregunta actual>"` (espacios colapsados). La anterior se recorta por el final para no pasar de 500 caracteres; la actual nunca se recorta. En otro caso, la pregunta actual. | 0 |
+| `rewrite` | Con historial no vacío, una cadena LCEL async (`build_rewrite_prompt` → chat model → parser estricto) pide al modelo una pregunta autónoma en español **sin responderla y sin añadir hechos** (del historial solo puede tomar el tema). Salida `{"question": str}` con `response_format` `json_schema` `strict` (`STANDALONE_QUESTION_SCHEMA`), cliente propio con `FOLLOWUP_REWRITE_MAX_TOKENS` (256) y `FOLLOWUP_REWRITE_TIMEOUT_SECONDS` (8 s, también como `asyncio.timeout` en el servicio). JSON inválido, claves duplicadas o extra, texto vacío o > 500 caracteres, error del proveedor o timeout → **fallback a `concat`** con `answer_rewrite_fallback error=<código>`. | 1 llamada al LLM por seguimiento (entrada ≈ prompt + historial, hasta ~4 000 tokens con 6 turnos de 2 000 caracteres; salida ≤ 256, incluido razonamiento) |
+
+Por qué la regla de `concat`: es explícita, gratuita e independiente del idioma.
+Limitar a preguntas cortas evita contaminar la recuperación cuando el
+estudiante cambia de tema con una pregunta completa. **Limitación honesta:**
+los 5 ítems `follow_up` del dataset tienen ≤ 10 palabras y empiezan por "¿Y…",
+así que el dataset no distingue esta regla de "concatenar siempre"; no hay ítems
+de cambio de tema con historial. `rewrite` queda para la evaluación: su coste
+(una llamada más y su latencia por cada pregunta con historial) no se justifica
+como defecto sin datos. Los tokens del rewrite **no** se suman a
+`AnswerResult.usage` (que sigue siendo el de la generación); se registran
+aparte en `rewrite_tokens`.
+
+### Umbral de relevancia: `MIN_RELEVANCE`
+
+Opcional y **desactivado por defecto** (vacío/ausente): no hay corpus indexado
+ni consultas reales para calibrarlo. Si se activa (`0 < MIN_RELEVANCE ≤ 1`), tras
+la fusión y la revalidación se toma la **mejor similitud coseno del canal
+semántico (Vectorize, métrica `cosine`)** entre las evidencias admisibles
+(`RetrievalResult.relevance`, interno; `/retrieval/query` no lo expone); si es
+menor que el umbral, `/answer` se abstiene con `no_evidence` sin llamar al LLM.
+
+Por qué coseno y no otra señal:
+
+- **RRF** solo usa rangos: el primer candidato siempre puntúa `1/(k+1)` (o el
+  doble si coincide en ambos canales) sea cual sea su relevancia real; un
+  umbral sobre RRF no detecta preguntas fuera de alcance.
+- **bm25** de FTS5 no está acotado y depende de las estadísticas del corpus y
+  del número de términos de la consulta OR; "normalizarlo" exigiría calibración
+  por corpus y aun así variaría con la longitud de la pregunta.
+- **Coseno** está acotado, no depende de la longitud de la consulta ni del resto
+  del corpus y es la señal estándar de "nada parecido en el índice".
+
+Límite: sin puntuación semántica (`RETRIEVAL_MODE=lexical`, `hybrid` degradado
+o canal semántico caído) el umbral **no se aplica** (`threshold=unscored`) y se
+sigue como hasta ahora; para evaluarlo hay que usar `hybrid` o `semantic`. El
+contrato v1 fija los motivos de abstención, por eso no hay un motivo nuevo:
+`no_evidence` incluye "por debajo del umbral".
+
+Además, el prompt de sistema (regla 5) pide abstenerse explícitamente si la
+pregunta no trata de Bienestar Universitario/Fomento Socioeconómico; eso cubre
+lo que el umbral no ve (fuentes léxicamente parecidas a una pregunta ajena).
+
+### Métricas y cómo evaluarlas (`evaluations/rag`)
+
+`answer_metrics` añade, sin contenido: `followup_strategy` (configurada),
+`followup_used` (`none|concat|rewrite`: qué regla produjo el texto
+recuperado), `followup_fallback` (`true` si el rewrite falló),
+`rewrite_ms`, `rewrite_tokens`, `threshold` (`off|pass|below|unscored`) y
+`below_threshold`. Con `RAG_LOG_LEVEL=INFO`.
+
+1. **Seguimientos:** arrancar el RAG con `FOLLOWUP_STRATEGY=none`, correr
+   `answer --label fu-none --category follow_up`; repetir con `concat` y
+   `rewrite`; `compare`. Comparar conducta, exactitud y cobertura de citas en
+   `follow_up` (y en `in_scope` para comprobar que no empeora). Para `rewrite`,
+   contar en los logs `followup_fallback=true` y sumar `rewrite_tokens` (coste
+   extra). `retrieval` no sirve aquí: `/retrieval/query` no recibe historial.
+2. **Fuera de alcance:** con `RETRIEVAL_MODE=hybrid`, correr `answer` con
+   `--category out_of_scope --category in_scope` para varios valores de
+   `MIN_RELEVANCE` (vacío, 0.2, 0.3, …) **solo en `dev`**; elegir el valor que
+   maximiza la abstención en `out_of_scope` sin bajar la tasa de respuesta en
+   `in_scope`, y congelarlo antes de medir `test`. `threshold=below` en los logs
+   distingue la abstención por umbral de un `no_evidence` sin candidatos.
+   Anotar la estrategia y el umbral en `--note` (el contrato no los expone).
+
 ### `RETRIEVAL_MODE` (evaluación de la tesis)
 
 | Modo | Canales | Si falta `VECTORIZE`, fetch o `AI_GATEWAY_API_KEY` |
@@ -202,6 +288,10 @@ campo, nunca con valores.
 | `EMBEDDING_DIMENSIONS` | var | `1536` (1..1536; debe coincidir con el índice) |
 | `EMBEDDING_URL` | var | `https://ai-gateway.vercel.sh/v1/embeddings` |
 | `EMBEDDING_TIMEOUT_SECONDS` | var | `10` |
+| `FOLLOWUP_STRATEGY` | var | `concat` (`none`, `rewrite`) |
+| `FOLLOWUP_REWRITE_MAX_TOKENS` | var | `256` (16..2048; solo `rewrite`) |
+| `FOLLOWUP_REWRITE_TIMEOUT_SECONDS` | var | `8` (solo `rewrite`) |
+| `MIN_RELEVANCE` | var | vacío = desactivado (`0 < x ≤ 1`, coseno) |
 | `DB` | binding D1 | ausente ⇒ `503` |
 | `VECTORIZE` | binding Vectorize | ausente ⇒ ver `RETRIEVAL_MODE` |
 
@@ -231,10 +321,10 @@ Métricas para la evaluación: cada `/answer` configurado emite en **INFO**
 (`RAG_LOG_LEVEL=INFO`):
 
 ```
-answer_metrics status=answered reason=- sources=3 retrieval_ms=41.0 generation_ms=1830.2 validation_ms=4.1 prompt_tokens=2510 completion_tokens=212 total_tokens=2722
+answer_metrics status=answered reason=- sources=3 retrieval_ms=41.0 generation_ms=1830.2 validation_ms=4.1 prompt_tokens=2510 completion_tokens=212 total_tokens=2722 followup_strategy=concat followup_used=concat followup_fallback=false rewrite_ms=- rewrite_tokens=- threshold=off below_threshold=false
 ```
 
-`generation_ms` cubre prompt + modelo; `validation_ms`, parser + citas +
+`retrieval_ms` excluye el rewrite (`rewrite_ms`); `generation_ms` cubre prompt + modelo; `validation_ms`, parser + citas +
 revalidación. Los tokens vienen del `usage` del proveedor (`-` si no los
 reporta). En Workers el reloj solo avanza con E/S (mitigación de Spectre), así
 que las latencias reflejan sobre todo la E/S. **El contrato `/answer` v1 no
@@ -357,6 +447,9 @@ módulos, 21 817 KiB sin comprimir (64 MiB de límite), 5 229 KiB gzip. `python_
   `database_id` real.
 - Calidad de la fusión (k=60, límite por canal 50): pendiente del harness de
   evaluación con `RETRIEVAL_MODE`.
+- Efecto real de `FOLLOWUP_STRATEGY` (`concat` vs `rewrite`) y valor de
+  `MIN_RELEVANCE`: sin corpus indexado ni gateway real no hay mediciones; la
+  regla de `concat` (≤ 10 palabras) no está calibrada y el umbral está apagado.
 
 - `WorkersFetch` sobre `workers.fetch` real hacia el gateway (en workerd solo
   se verificó `self.env`, D1 local y las rutas sin generación).

@@ -1,4 +1,5 @@
 from collections.abc import Mapping, Sequence
+from math import isfinite
 from typing import Protocol, runtime_checkable
 
 from langchain_core.retrievers import BaseRetriever
@@ -26,6 +27,15 @@ __all__ = [
     "AsyncRetriever",
     "RetrievalService",
 ]
+
+
+def _semantic_score(document: object) -> float | None:
+    """Return the semantic channel's native (cosine) score from the fusion trace."""
+    metadata = getattr(document, "metadata", None)
+    score = metadata.get("score_semantic") if isinstance(metadata, dict) else None
+    if type(score) not in (int, float) or not isfinite(score):  # type: ignore[arg-type]
+        return None
+    return float(score)  # type: ignore[arg-type]
 
 
 class AsyncEvidenceCatalog(Protocol):
@@ -84,33 +94,40 @@ class RetrievalService:
         if self._retriever is None or self._catalog is None:
             return RetrievalResult("unavailable")
         evidence: list[Evidence] = []
+        relevance: float | None = None
         phase = "retriever"
         # Adapter ports may raise anything; fail closed without partial evidence.
         try:
             documents = await self._retriever.ainvoke(
                 request.question, k=request.limit * self._oversampling
             )
-            candidates = [document_candidate(document) for document in documents]
             unique: list[ChunkCandidate] = []
+            scores: list[float | None] = []
             seen: set[tuple[str, str, str]] = set()
-            for candidate in candidates:
+            for document in documents:
+                candidate = document_candidate(document)
                 key = (candidate.document_id, candidate.version_id, candidate.chunk_id)
                 if key not in seen:
                     seen.add(key)
                     unique.append(candidate)
+                    scores.append(_semantic_score(document))
             phase = "catalog"
             entries: Mapping[str, RegistryEntry] | None = None
             if unique and isinstance(self._catalog, AsyncBatchEvidenceCatalog):
                 entries = await self._catalog.get_current_many(
                     [candidate.chunk_id for candidate in unique]
                 )
-            for candidate in unique:
+            for candidate, score in zip(unique, scores, strict=True):
                 if entries is not None:
                     entry = entries.get(candidate.chunk_id)
                 else:
                     entry = await self._catalog.get_current(candidate.chunk_id)
                 if is_admissible(candidate, entry):
                     evidence.append(to_evidence(candidate, entry))  # type: ignore[arg-type]
+                    if score is not None:
+                        relevance = (
+                            score if relevance is None else max(relevance, score)
+                        )
                     if len(evidence) == request.limit:
                         break
         except InvalidCandidateError:
@@ -122,5 +139,7 @@ class RetrievalService:
             )
             return RetrievalResult("unavailable")
         return RetrievalResult(
-            "evidence_found" if evidence else "abstained", tuple(evidence)
+            "evidence_found" if evidence else "abstained",
+            tuple(evidence),
+            relevance if evidence else None,
         )

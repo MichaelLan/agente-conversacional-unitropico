@@ -95,10 +95,17 @@ class RankedChunk:
 
 @dataclass(frozen=True)
 class RetrievalResult:
-    """Return admissible evidence only, never an LLM answer or sufficiency claim."""
+    """Return admissible evidence only, never an LLM answer or sufficiency claim.
+
+    ``relevance`` is the best semantic-channel (cosine) score among the
+    returned evidence, or None when no returned item carries one (lexical-only
+    mode, failed semantic channel, or a retriever without fusion trace). It is
+    internal: the HTTP contracts do not expose it.
+    """
 
     status: Literal["unavailable", "abstained", "evidence_found"]
     evidence: tuple[Evidence, ...] = ()
+    relevance: float | None = None
 
 
 def _nonblank(value: object) -> bool:

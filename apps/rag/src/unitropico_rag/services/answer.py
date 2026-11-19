@@ -1,9 +1,11 @@
+import asyncio
 import json
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import date
-from typing import Any, Protocol
+from math import isfinite
+from typing import Any, Protocol, get_args
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import BaseMessage
@@ -17,6 +19,8 @@ from unitropico_rag.domain.answer import (
     AnswerQuery,
     AnswerResult,
     ConversationTurn,
+    FollowupStrategy,
+    StandaloneQuestion,
 )
 from unitropico_rag.domain.evidence import (
     Evidence,
@@ -32,14 +36,22 @@ from unitropico_rag.domain.generation import (
 from unitropico_rag.services.chat_model import GeneratorChatModel, message_usage
 from unitropico_rag.services.prompt import (
     DEFAULT_REFERRAL,
+    REWRITE_SYSTEM_PROMPT,
     SYSTEM_PROMPT,
     build_answer_prompt,
+    build_rewrite_prompt,
 )
 from unitropico_rag.services.retrieval import AsyncEvidenceCatalog
 
 # A quote must carry at least this many non-whitespace characters, so that
 # trivially short strings ("de", "2026") cannot pass as literal evidence.
 MIN_QUOTE_CHARS = 12
+
+# concat rule: a question of at most this many whitespace-separated words is
+# treated as a follow-up and prefixed with the last user question of history.
+CONCAT_MAX_WORDS = 10
+# Same bound as RetrievalQuery.question.
+MAX_RETRIEVAL_CHARS = 500
 
 
 class EvidenceRetrieval(Protocol):
@@ -122,6 +134,12 @@ class _Trace:
     generated: float | None = None
     usage: TokenUsage | None = None
     sources: int = 0
+    followup_used: str = "none"
+    followup_fallback: bool = False
+    rewrite_started: float | None = None
+    rewrite_ended: float | None = None
+    rewrite_usage: TokenUsage | None = None
+    threshold: str = "off"
 
 
 def _ms(start: float | None, end: float | None) -> str:
@@ -134,6 +152,37 @@ def _ms(start: float | None, end: float | None) -> str:
 def _count(value: int | None) -> str:
     """Format an optional token count."""
     return "-" if value is None else str(value)
+
+
+def _last_user_question(history: Sequence[ConversationTurn]) -> str | None:
+    """Return the most recent user turn of the history, if any."""
+    for turn in reversed(history):
+        if turn.role == "user":
+            return turn.content
+    return None
+
+
+def concat_question(query: AnswerQuery) -> str | None:
+    """Apply the ``concat`` rule; return None when it does not apply.
+
+    Rule: if the history has a user turn and the current question has at most
+    ``CONCAT_MAX_WORDS`` whitespace-separated words, the retrieval question is
+    ``"<last user question> <current question>"`` (whitespace collapsed). The
+    previous question is cut from its end so the result stays within
+    ``MAX_RETRIEVAL_CHARS``; the current question is never cut.
+    """
+    previous = _last_user_question(query.history)
+    if previous is None or len(query.question.split()) > CONCAT_MAX_WORDS:
+        return None
+    budget = MAX_RETRIEVAL_CHARS - len(query.question) - 1
+    prefix = normalize_whitespace(previous)[: max(budget, 0)].strip()
+    if not prefix:
+        return None
+    return f"{prefix} {query.question}"
+
+
+class _InvalidRewrite(ValueError):
+    """The rewrite model returned something that is not a usable question."""
 
 
 class AnswerService:
@@ -150,7 +199,17 @@ class AnswerService:
     fixed prompt do not guarantee semantic grounding or prompt-injection
     resistance. No retries occur. Logs never include questions, history,
     evidence text or provider payloads; ``answer_metrics`` (INFO) records only
-    status, reason, phase latencies, source count and token counts.
+    status, reason, phase latencies, source count, token counts, the follow-up
+    strategy/fallback and the relevance-gate outcome.
+
+    Retrieval question (``followup_strategy``): ``none`` uses the current
+    question; ``concat`` applies ``concat_question``; ``rewrite`` asks
+    ``rewriter`` (a chat model with the ``StandaloneQuestion`` schema) for a
+    standalone question via its own LCEL chain and falls back to ``concat`` on
+    any failure, timeout or invalid output. Generation always receives the
+    original question plus history. ``min_relevance`` (None = off) abstains
+    with ``no_evidence`` when the best semantic score of the evidence is
+    below it; unscored evidence (no semantic channel) is not gated.
     """
 
     def __init__(
@@ -165,8 +224,34 @@ class AnswerService:
         referral: str = DEFAULT_REFERRAL,
         clock: Callable[[], date] = date.today,
         timer: Callable[[], float] = time.perf_counter,
+        followup_strategy: FollowupStrategy = "none",
+        rewriter: BaseChatModel | TextGenerator | None = None,
+        rewrite_timeout: float = 8.0,
+        rewrite_system_prompt: str = REWRITE_SYSTEM_PROMPT,
+        min_relevance: float | None = None,
     ) -> None:
         """Receive explicit ports and limits; absent ports never produce answers."""
+        if (
+            followup_strategy not in get_args(FollowupStrategy)
+            or type(rewrite_timeout) not in (int, float)
+            or not isfinite(rewrite_timeout)
+            or not 0 < rewrite_timeout <= 60
+            or not rewrite_system_prompt.strip()
+            or (
+                min_relevance is not None
+                and (
+                    type(min_relevance) not in (int, float)
+                    or not isfinite(min_relevance)
+                    or not 0 < min_relevance <= 1
+                )
+            )
+            or (
+                followup_strategy == "rewrite"
+                and generator is not None
+                and rewriter is None
+            )
+        ):
+            raise ValueError("invalid answer service configuration")
         if (
             type(max_input_chars) is not int
             or max_input_chars < 1
@@ -182,6 +267,15 @@ class AnswerService:
         self._max_input_chars, self._evidence_limit = max_input_chars, evidence_limit
         self._system_prompt, self._referral = system_prompt, referral
         self._clock, self._timer = clock, timer
+        self._strategy, self._min_relevance = followup_strategy, min_relevance
+        self._rewrite_timeout = rewrite_timeout
+        self._rewrite_chain: Runnable[dict[str, Any], str] | None = None
+        if rewriter is not None and followup_strategy == "rewrite":
+            if not isinstance(rewriter, BaseChatModel):
+                rewriter = GeneratorChatModel(generator=rewriter)
+            self._rewrite_chain = RunnablePassthrough.assign(
+                message=build_rewrite_prompt(rewrite_system_prompt) | rewriter
+            ) | RunnableLambda(self._aparse_rewrite, name="parse_rewrite")
         self._prompt = build_answer_prompt(system_prompt)
         self._chain: Runnable[dict[str, Any], AnswerResult] | None = None
         if generator is not None:
@@ -196,6 +290,11 @@ class AnswerService:
     def chain(self) -> Runnable[dict[str, Any], AnswerResult] | None:
         """Return the generation/validation chain (None when unconfigured)."""
         return self._chain
+
+    @property
+    def rewrite_chain(self) -> Runnable[dict[str, Any], str] | None:
+        """Return the standalone-question chain (None unless ``rewrite``)."""
+        return self._rewrite_chain
 
     def _unavailable(self, phase: str, attempted: bool = False) -> AnswerResult:
         """Build a referral-bearing unavailable result and log its phase."""
@@ -217,13 +316,70 @@ class AnswerService:
             usage=usage,
         )
 
-    def _retrieval_question(self, query: AnswerQuery) -> str:
-        """Return the text used for retrieval.
+    async def _retrieval_question(self, query: AnswerQuery, trace: _Trace) -> str:
+        """Return the text used for retrieval according to ``followup_strategy``.
 
-        Extension point: a standalone reformulation from history may replace this
-        once evaluated; today retrieval uses only the current question.
+        Without history every strategy uses the current question unchanged.
+        ``trace.followup_used`` records which rule produced the text.
         """
-        return query.question
+        if self._strategy == "none" or not query.history:
+            return query.question
+        if self._strategy == "rewrite" and self._rewrite_chain is not None:
+            trace.rewrite_started = self._timer()
+            try:
+                question = await self._rewrite(query, trace)
+            except Exception as error:  # Any rewrite failure falls back to concat.
+                if isinstance(error, GenerationError):
+                    code = error.code
+                elif isinstance(error, TimeoutError):
+                    code = "timeout"
+                elif isinstance(error, ValueError | TypeError | RecursionError):
+                    code = "invalid_output"
+                else:
+                    code = type(error).__name__
+                logger.warning("answer_rewrite_fallback error=%s", code)
+                trace.followup_fallback = True
+            else:
+                trace.followup_used = "rewrite"
+                return question
+            finally:
+                trace.rewrite_ended = self._timer()
+        combined = concat_question(query)
+        if combined is None:
+            return query.question
+        trace.followup_used = "concat"
+        return combined
+
+    async def _rewrite(self, query: AnswerQuery, trace: _Trace) -> str:
+        """Run the rewrite chain within ``rewrite_timeout`` seconds."""
+        content = json.dumps(
+            {
+                "historial": [
+                    {"role": turn.role, "content": turn.content}
+                    for turn in query.history
+                ],
+                "pregunta": query.question,
+            },
+            ensure_ascii=False,
+        )
+        async with asyncio.timeout(self._rewrite_timeout):
+            return await self._rewrite_chain.ainvoke(  # type: ignore[union-attr]
+                {"content": content, "trace": trace}
+            )
+
+    async def _aparse_rewrite(self, state: dict[str, Any]) -> str:
+        """Strictly parse ``{"question": str}``; reject blank or overlong text."""
+        message = state["message"]
+        if not isinstance(message, BaseMessage) or not isinstance(message.content, str):
+            raise _InvalidRewrite("message")
+        state["trace"].rewrite_usage = message_usage(message)
+        parsed = StandaloneQuestion.model_validate(
+            json.loads(message.content, object_pairs_hook=_unique_object)
+        )
+        question = normalize_whitespace(parsed.question)
+        if not question or len(question) > MAX_RETRIEVAL_CHARS:
+            raise _InvalidRewrite("question")
+        return question
 
     def _content(
         self,
@@ -353,7 +509,8 @@ class AnswerService:
     async def _answer(self, query: AnswerQuery, trace: _Trace) -> AnswerResult:
         """Run retrieval, then the generation/validation chain."""
         request = RetrievalQuery(
-            question=self._retrieval_question(query), limit=self._evidence_limit
+            question=await self._retrieval_question(query, trace),
+            limit=self._evidence_limit,
         )
         try:
             retrieval = await self._retrieval.query(request)  # type: ignore[union-attr]
@@ -366,6 +523,14 @@ class AnswerService:
             return self._unavailable("retrieval")
         if retrieval.status != "evidence_found" or not retrieval.evidence:
             return self._abstain("no_evidence")
+        if self._min_relevance is not None:
+            if retrieval.relevance is None:
+                trace.threshold = "unscored"
+            elif retrieval.relevance < self._min_relevance:
+                trace.threshold = "below"
+                return self._abstain("no_evidence")
+            else:
+                trace.threshold = "pass"
         fitted = self._fit(query, retrieval.evidence)
         if fitted is None:
             return self._unavailable("input_budget")
@@ -394,11 +559,16 @@ class AnswerService:
         logger.info(
             "answer_metrics status=%s reason=%s sources=%d retrieval_ms=%s "
             "generation_ms=%s validation_ms=%s prompt_tokens=%s "
-            "completion_tokens=%s total_tokens=%s",
+            "completion_tokens=%s total_tokens=%s followup_strategy=%s "
+            "followup_used=%s followup_fallback=%s rewrite_ms=%s rewrite_tokens=%s "
+            "threshold=%s below_threshold=%s",
             result.status,
             result.reason or "-",
             trace.sources,
-            _ms(trace.started, trace.retrieved),
+            _ms(
+                trace.started if trace.rewrite_ended is None else trace.rewrite_ended,
+                trace.retrieved,
+            ),
             _ms(trace.chain_started, trace.generated or end)
             if trace.chain_started is not None
             else "-",
@@ -406,4 +576,11 @@ class AnswerService:
             _count(usage.prompt_tokens),
             _count(usage.completion_tokens),
             _count(usage.total_tokens),
+            self._strategy,
+            trace.followup_used,
+            str(trace.followup_fallback).lower(),
+            _ms(trace.rewrite_started, trace.rewrite_ended),
+            _count(trace.rewrite_usage.total_tokens if trace.rewrite_usage else None),
+            trace.threshold,
+            str(trace.threshold == "below").lower(),
         )

@@ -13,6 +13,11 @@ AbstentionReason = Literal[
     "stale_source",
 ]
 
+# How the retrieval question is built from the current question and history:
+# "none" (current question only), "concat" (cost-free heuristic) or "rewrite"
+# (standalone reformulation by the chat model, one extra call per follow-up).
+FollowupStrategy = Literal["none", "concat", "rewrite"]
+
 
 @dataclass(frozen=True)
 class ConversationTurn:
@@ -67,6 +72,22 @@ ANSWER_CANDIDATE_SCHEMA: dict[str, object] = {
         },
     },
     "required": ["status", "answer", "citations"],
+    "additionalProperties": False,
+}
+
+
+class StandaloneQuestion(BaseModel):
+    """Describe the untrusted rewrite envelope: exactly one question string."""
+
+    model_config = ConfigDict(strict=True, extra="forbid", frozen=True)
+    question: str
+
+
+# Strict JSON Schema mirroring StandaloneQuestion for provider structured outputs.
+STANDALONE_QUESTION_SCHEMA: dict[str, object] = {
+    "type": "object",
+    "properties": {"question": {"type": "string"}},
+    "required": ["question"],
     "additionalProperties": False,
 }
 

@@ -10,7 +10,14 @@
     "GENERATION_MODEL": "openai/gpt-6-luna",
     "EMBEDDING_MODEL": "openai/text-embedding-3-small",
     "EMBEDDING_DIMENSIONS": 1536,
-    "RETRIEVAL_MODE": "hybrid"
+    "RETRIEVAL_MODE": "hybrid",
+    // Retrieval question for follow-ups: none | concat | rewrite (rewrite adds
+    // one LLM call per follow-up; see README "Conversación y alcance").
+    "FOLLOWUP_STRATEGY": "concat",
+    "FOLLOWUP_REWRITE_MAX_TOKENS": 256,
+    "FOLLOWUP_REWRITE_TIMEOUT_SECONDS": 8,
+    // Minimum Vectorize cosine score (0..1]; empty = disabled (not calibrated).
+    "MIN_RELEVANCE": ""
   },
   // Secret (wrangler secret put): AI_GATEWAY_API_KEY.
   "d1_databases": [

@@ -11,7 +11,10 @@ from unitropico_rag.api.retrieval import create_retrieval_router
 from unitropico_rag.api.routes import create_health_router
 from unitropico_rag.core.logger import configure_logger, logger
 from unitropico_rag.core.settings import ENV_NAMES, Settings
-from unitropico_rag.domain.answer import ANSWER_CANDIDATE_SCHEMA
+from unitropico_rag.domain.answer import (
+    ANSWER_CANDIDATE_SCHEMA,
+    STANDALONE_QUESTION_SCHEMA,
+)
 from unitropico_rag.domain.generation import StructuredOutput
 from unitropico_rag.infra.d1 import D1Database, D1EvidenceCatalog, D1LexicalRetriever
 from unitropico_rag.infra.embeddings import GatewayEmbedder, GatewayEmbeddings
@@ -159,7 +162,7 @@ def build_app(
     if retriever is None and catalog is None and bindings is not None:
         retriever, catalog = compose_retrieval(settings, bindings, fetch)
     retrieval = RetrievalService(retriever, catalog)
-    model = None
+    model = rewriter = None
     if fetch is not None and settings.ai_gateway_api_key is not None:
         client = GatewayClient(
             model=settings.generation_model,
@@ -177,6 +180,24 @@ def build_app(
         model = GeneratorChatModel(
             generator=client, model_name=settings.generation_model
         )
+        if settings.followup_strategy == "rewrite":
+            # Separate client: its own strict schema, low token cap and timeout.
+            rewrite_client = GatewayClient(
+                model=settings.generation_model,
+                api_key=settings.ai_gateway_api_key,
+                fetch=fetch,
+                url=settings.gateway_url,
+                timeout=settings.rewrite_timeout_seconds,
+                max_tokens=settings.rewrite_max_tokens,
+                max_input_chars=settings.max_input_chars,
+                reasoning_effort=settings.reasoning_effort,
+                structured_output=StructuredOutput(
+                    "standalone_question", STANDALONE_QUESTION_SCHEMA
+                ),
+            )
+            rewriter = GeneratorChatModel(
+                generator=rewrite_client, model_name=settings.generation_model
+            )
     answer = AnswerService(
         retrieval,
         model,
@@ -185,6 +206,10 @@ def build_app(
         evidence_limit=settings.evidence_limit,
         system_prompt=SYSTEM_PROMPT,
         referral=DEFAULT_REFERRAL,
+        followup_strategy=settings.followup_strategy,
+        rewriter=rewriter,
+        rewrite_timeout=settings.rewrite_timeout_seconds,
+        min_relevance=settings.min_relevance,
     )
     return create_app(retrieval_service=retrieval, answer_service=answer)
 
