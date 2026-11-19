@@ -61,8 +61,18 @@ class Chunker(Protocol):
         """Return the constant identifying the chunking strategy and its rules."""
         ...
 
+    def prepare(self, pages: Sequence[PageText]) -> list[PageText]:
+        """Return the prepared pages the chunker segments (corrections target)."""
+        ...
+
+    def chunk_prepared(
+        self, prepared: Sequence[PageText], *, version_id: str
+    ) -> list[Chunk]:
+        """Chunk pages returned by ``prepare``; deterministic."""
+        ...
+
     def chunk(self, pages: Sequence[PageText], *, version_id: str) -> list[Chunk]:
-        """Return deterministic chunks; pages without text yield no chunks."""
+        """Return ``chunk_prepared(prepare(pages))``; pages without text yield none."""
         ...
 
 

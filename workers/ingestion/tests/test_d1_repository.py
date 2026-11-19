@@ -31,6 +31,54 @@ def test_active_corrections_is_the_canonical_query():
     )
 
 
+@pytest.mark.parametrize(
+    ("constant", "name"),
+    [
+        ("CORRECTIONS_REV", "corrections_rev_by_version"),
+        ("CLEAR_CORRECTIONS_DIRTY", "clear_corrections_dirty"),
+    ],
+)
+def test_pending_corrections_statements_are_canonical(constant, name):
+    """The corrections revision read and the dirty clear are canonical."""
+    assert " ".join(getattr(d1_repository, constant).split()) == _canonical(name)
+
+
+def test_replace_chunks_clears_dirty_only_for_the_read_revision():
+    """Compare-and-set on corrections_rev; no revision means no clear."""
+    db, repo = _repo()
+    chunk = build_chunk(
+        version_id="v1",
+        chunker_version="t",
+        ordinal=0,
+        text="texto",
+        section=None,
+        page_start=1,
+        page_end=1,
+    )
+
+    async def flow():
+        assert await repo.start_processing("v1")
+        assert await repo.mark_extracted("v1", page_count=3, extraction_key="k")
+        db.conn.execute(
+            "INSERT INTO text_corrections (id, version_id, page_number, find_text, "
+            "replace_text, reason) VALUES ('c1', 'v1', 1, 'a', 'b', 'r')"
+        )
+        read = await repo.correction_set("v1")
+        assert read.revision == 1 and [c.id for c in read.corrections] == ["c1"]
+        assert not await repo.replace_chunks("v1", chunker_version="t", chunks=[chunk])
+        assert db.version("v1")["corrections_dirty"] == 1
+        assert not await repo.replace_chunks(
+            "v1", chunker_version="t", chunks=[chunk], corrections_rev=0
+        )
+        assert db.version("v1")["corrections_dirty"] == 1
+        assert await repo.replace_chunks(
+            "v1", chunker_version="t", chunks=[chunk], corrections_rev=1
+        )
+        assert db.version("v1")["corrections_dirty"] == 0
+
+    asyncio.run(flow())
+
+
 def test_no_statement_publishes():
     """No statement publishes."""
     sql = [

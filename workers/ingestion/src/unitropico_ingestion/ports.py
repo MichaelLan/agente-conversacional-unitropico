@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from unitropico_ingestion.domain.chunking import Chunk
-from unitropico_ingestion.domain.corrections import TextCorrection
+from unitropico_ingestion.domain.corrections import CorrectionSet
 from unitropico_ingestion.domain.ingestion import VersionRecord
 
 
@@ -79,14 +79,28 @@ class VersionRepository(Protocol):
         """Move processing/extracted to extracted with OCR provenance."""
         ...
 
-    async def active_corrections(self, version_id: str) -> list[TextCorrection]:
-        """Return the corrections not logically deleted, in application order."""
+    async def correction_set(self, version_id: str) -> CorrectionSet:
+        """Return the active corrections (application order) and their revision.
+
+        Both are read in one snapshot (one D1 batch).
+        """
         ...
 
     async def replace_chunks(
-        self, version_id: str, *, chunker_version: str, chunks: Sequence[Chunk]
-    ) -> None:
-        """Delete the version chunks and insert the new ones (FTS via triggers)."""
+        self,
+        version_id: str,
+        *,
+        chunker_version: str,
+        chunks: Sequence[Chunk],
+        corrections_rev: int | None = None,
+    ) -> bool:
+        """Delete the version chunks and insert the new ones (FTS via triggers).
+
+        With ``corrections_rev``, the last atomic batch also clears
+        ``corrections_dirty`` when the revision is still that one. Returns
+        whether the flag is clear (False when a correction changed meanwhile or
+        no revision was given).
+        """
         ...
 
     async def set_embedding_model(self, version_id: str, model: str) -> None:

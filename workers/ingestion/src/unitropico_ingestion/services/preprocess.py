@@ -5,10 +5,11 @@ from collections.abc import Mapping, Sequence
 
 from unitropico_ingestion.domain.chunking import PageText
 from unitropico_ingestion.services.headings import is_structural_heading
+from unitropico_ingestion.services.tables import HTML_TABLE, parse_html_table
 
 PAGE_MARKER = re.compile(r"<!--\s*page\s+(\d+)\s*-->", re.IGNORECASE)
-_INVISIBLE = dict.fromkeys(map(ord, "​‌‍⁠﻿­"))
-_HORIZONTAL_SPACE = re.compile(r"[ \t\f\v  -   　]+")
+INVISIBLE = dict.fromkeys(map(ord, "​‌‍⁠﻿­"))
+HORIZONTAL_SPACE = re.compile(r"[ \t\f\v  -   　]+")
 _MIN_LETTERS_FOR_BOILERPLATE = 4
 
 
@@ -46,9 +47,9 @@ def normalize_text(text: str) -> str:
     Line structure is kept (tables and headings depend on it); runs of blank
     lines collapse into one.
     """
-    text = unicodedata.normalize("NFC", text).translate(_INVISIBLE)
+    text = unicodedata.normalize("NFC", text).translate(INVISIBLE)
     text = PAGE_MARKER.sub("\n", text.replace("\r\n", "\n").replace("\r", "\n"))
-    lines = [_HORIZONTAL_SPACE.sub(" ", line).strip() for line in text.split("\n")]
+    lines = [HORIZONTAL_SPACE.sub(" ", line).strip() for line in text.split("\n")]
     return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
 
 
@@ -111,9 +112,42 @@ def strip_repeated_lines(
     return result
 
 
+def render_html_tables(text: str) -> str:
+    """Replace every HTML table with its Markdown rendering (``tables.py``).
+
+    The rendered table is separated by blank lines, which the chunker treats
+    exactly like the boundaries it used to cut around an HTML table; a table
+    without cells disappears, as it did in the chunker. Cell text is decoded
+    (entities, tags) and whitespace-collapsed; nothing else is normalized
+    again, so table rows keep the exact text the chunks show.
+    """
+
+    def render(match: re.Match[str]) -> str:
+        table = parse_html_table(match.group(0), 1)
+        return f"\n\n{table.render()}\n\n" if table is not None else "\n\n"
+
+    return HTML_TABLE.sub(render, text)
+
+
 def prepare_pages(
-    pages: Sequence[PageText], *, strip_boilerplate: bool = True
+    pages: Sequence[PageText],
+    *,
+    strip_boilerplate: bool = True,
+    convert_tables: bool = False,
 ) -> list[PageText]:
-    """Normalize pages and optionally strip running headers and footers."""
-    normalized = normalize_pages(pages)
-    return strip_repeated_lines(normalized) if strip_boilerplate else normalized
+    """Normalize pages, strip running headers/footers, convert HTML tables.
+
+    This is the text the administrator sees in the chunks (modulo the
+    unwrapping of paragraph lines) and the text OCR corrections are matched
+    against. Order: normalization, boilerplate removal (on the raw lines, as
+    before), then HTML tables to Markdown.
+    """
+    prepared = normalize_pages(pages)
+    if strip_boilerplate:
+        prepared = strip_repeated_lines(prepared)
+    if convert_tables:
+        prepared = [
+            PageText(page.page_number, render_html_tables(page.text))
+            for page in prepared
+        ]
+    return prepared

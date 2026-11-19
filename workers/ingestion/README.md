@@ -33,7 +33,7 @@ la hace siempre el administrador a mano desde la API.
 |---|---|---|
 | `mark_processing` | `→ processing`, `processing_attempts + 1`, evento `extract/started`. Si ya está en `processing` (reanudación), lo acepta sin contar otro intento. Si está en `published`, falla con `invalid_state`. | 3, exponencial |
 | `ocr` | Reutiliza `ocr/{sha}/{OCR_VERSION}-p{OCR_MAX_PAGES}.json` de R2 si existe (no se paga otra vez). Si no existe, lee `source_r2_key` y comprueba `%PDF`, ≤ 50 MB y que el sha256 coincida; después hace un POST a Firecrawl Parse v2, valida la respuesta (`parse_ocr_response`: éxito, páginas, sin truncar) y solo entonces guarda el JSON crudo. Una respuesta truncada (`totalPages > numPages`) o inválida no se cachea. Si `mark_extracted` no cambia nada, falla con `invalid_state`. Pasa a `extracted` con `page_count` y `extraction_r2_key`. | **1** (cada intento puede facturarse) |
-| `chunk` | Parte el OCR por página física (`data.pages[]`, o `<!-- page N -->` como respaldo). Antes de trocear aplica las **correcciones de texto activas** de la versión (ver abajo). Después usa `StructuralChunker`, guarda `chunks/{version_id}/{chunker_version}.jsonl` y reemplaza los chunks en D1 en lotes atómicos; FTS se actualiza por triggers. Con 0 chunks falla con `ocr_empty`; con una corrección inaplicable, con `correction_not_applicable`. | 3 (los dos errores anteriores son permanentes) |
+| `chunk` | Parte el OCR por página física (`data.pages[]`, o `<!-- page N -->` como respaldo). Antes de trocear aplica las **correcciones de texto activas** de la versión sobre las páginas preparadas (ver abajo) y limpia `corrections_dirty` si no cambiaron durante el paso. Después usa `StructuralChunker`, guarda `chunks/{version_id}/{chunker_version}.jsonl` y reemplaza los chunks en D1 en lotes atómicos; FTS se actualiza por triggers. Con 0 chunks falla con `ocr_empty`; con una corrección inaplicable, con `correction_not_applicable`. | 3 (los dos errores anteriores son permanentes) |
 | `embed_{n}` | Lotes de ≤ 96 chunks. Reutiliza `embeddings/{version_id}/{chunker_version}/{model}/{n}.json` si los ids, el modelo y las dimensiones coinciden. Si no, llama al gateway, valida las dimensiones y guarda el resultado. | 3 |
 | `index` | Upsert en Vectorize (≤ 1000 por lote) con `id = chunks.id` y metadata `{version_id, document_id}`. Borra con `deleteByIds` los ids que quedaron de ejecuciones anteriores, calculados desde el manifiesto `vectors/{version_id}/manifest.json`. El manifiesto se amplía a «viejos ∪ nuevos» antes del upsert y se reduce a «nuevos» al terminar, así que un fallo a mitad no pierde ids huérfanos. | 3 |
 | `finalize` | `extracted → review_required` (si `requires_review=1`) o `ready`. Evento `review`. | 3 |
@@ -49,37 +49,65 @@ Al reprocesar, el paso `chunk`:
    **El objeto de R2 no se modifica**: las correcciones no cambian la caché ni
    provocan un OCR nuevo (un reproceso con OCR en R2 hace 0 llamadas a
    Firecrawl).
-2. Carga las correcciones activas (`deleted_at IS NULL`) en orden
-   `created_at, id` (`ACTIVE_CORRECTIONS`, copia literal de
-   `active_corrections_by_version` de `infra/d1/queries.sql`; un test lo
-   comprueba). Las borradas lógicamente se ignoran.
-3. `services/corrections.apply_corrections`, por cada corrección:
-   - normaliza el texto de **su** página con `preprocess.normalize_text` (NFC,
-     sin caracteres invisibles ni marcadores de página, espacios horizontales
-     colapsados, líneas recortadas, como mucho una línea en blanco seguida). Es
-     la misma normalización que aplican los chunkers e idempotente, así que el
-     resultado del chunker no cambia en lo que no se corrige;
-   - normaliza `find_text` igual y lo busca **literalmente** (mayúsculas,
-     tildes y puntuación exactas). Única relajación: cualquier secuencia de
-     espacios en blanco de `find_text` (espacios o saltos de línea) equivale a
-     cualquier secuencia de espacios en blanco de la página. Así se puede
-     copiar el texto de un chunk, donde las líneas partidas se unen con espacio;
+2. Carga, en **un solo batch de D1** (una instantánea), `corrections_rev` de la
+   versión y las correcciones activas (`deleted_at IS NULL`) en orden
+   `created_at, rowid` (`CORRECTIONS_REV` y `ACTIVE_CORRECTIONS`, copias
+   literales de `corrections_rev_by_version` y `active_corrections_by_version`
+   de `infra/d1/queries.sql`; un test lo comprueba). El desempate por `rowid`
+   (orden de inserción) es determinista; el `id` es un uuid4 aleatorio. Las
+   borradas lógicamente se ignoran.
+3. Prepara las páginas con `chunker.prepare(pages)`: es **la misma
+   representación que ve el administrador en los chunks**. En orden:
+   normalización (`preprocess.normalize_text`: NFC, sin caracteres invisibles
+   ni marcadores de página, espacios horizontales colapsados, líneas
+   recortadas, como mucho una línea en blanco seguida), eliminación de
+   cabeceras y pies repetidos (`strip_repeated_lines`: solo queda la primera
+   aparición) y conversión de las tablas HTML a filas Markdown
+   (`preprocess.render_html_tables` con `tables.parse_html_table`: entidades
+   decodificadas, etiquetas eliminadas, `| celda | celda |`).
+4. `services/corrections.apply_corrections` sobre esas páginas preparadas, por
+   cada corrección:
+   - normaliza `find_text` como el texto de la página y lo busca
+     **literalmente** (mayúsculas, tildes y puntuación exactas). Única
+     relajación: cualquier secuencia de espacios en blanco de `find_text`
+     (espacios o saltos de línea) equivale a cualquier secuencia de espacios en
+     blanco de la página. Así se puede copiar el texto de un chunk, donde las
+     líneas partidas se unen con espacio, incluidas filas enteras de tabla;
    - cuenta las apariciones (también solapadas). Si no es **exactamente 1**, la
      versión falla con el código permanente `correction_not_applicable` y
      `error_detail = "step=chunk correction={id} page={n} matches={k}"` (sin
-     texto del documento). Una página inexistente en el OCR cuenta 0. No se
-     escribe nada (ni JSONL ni chunks);
-   - sustituye ese único tramo por `replace_text` (NFC; puede ser vacío para
-     borrar ruido). Varias correcciones de la misma página se aplican en orden,
+     texto del documento). Una página sin texto visible cuenta 0. No se
+     escribe nada (ni JSONL ni chunks). El HTML crudo (`&amp;`, `<td>`) y las
+     cabeceras repetidas eliminadas ya no existen en ese texto, así que nunca
+     cuentan como coincidencias invisibles;
+   - sustituye ese único tramo por `replace_text` (NFC, sin caracteres
+     invisibles; puede ser vacío para borrar ruido) y vuelve a normalizar solo
+     las líneas tocadas (espacios colapsados y recortados), como habría hecho
+     el chunker. Varias correcciones de la misma página se aplican en orden,
      cada una sobre el texto que dejó la anterior.
-   Sin correcciones activas las páginas pasan intactas (mismos chunks y ids).
-4. Trazabilidad: un evento `correct/succeeded` por corrección aplicada
+   Las páginas sin correcciones pasan intactas; `chunker.chunk_prepared` trocea
+   el resultado. `chunk(pages)` es exactamente
+   `chunk_prepared(prepare(pages))`, así que sin correcciones salen los mismos
+   chunks e ids que antes del refactor (tests con ids fijados sobre el fixture
+   y sobre casos con tablas; además se comparó el chunker anterior y el nuevo
+   sobre las 5 respuestas reales de Firecrawl y el corpus de
+   `evaluations/ocr/.artifacts`, con 63 tablas HTML: 0 diferencias).
+5. Escribe los chunks. El último batch atómico de `replace_chunks` incluye
+   `CLEAR_CORRECTIONS_DIRTY` (copia de `clear_corrections_dirty`): pone
+   `corrections_dirty = 0` **solo si `corrections_rev` sigue siendo el leído en
+   el punto 2** (compare-and-set). Si el administrador creó o borró una
+   corrección mientras el paso corría, la revisión cambió, la marca sigue a 1 y
+   la versión no se puede marcar como revisada ni publicar hasta otro
+   reproceso (409 `corrections_pending` en la API; el trigger
+   `document_versions_publish_guard` y un `CHECK` lo impiden también en D1).
+6. Trazabilidad: un evento `correct/succeeded` por corrección aplicada
    (`detail = "correction_applied id={id} page={n}"`), `chunk/succeeded` con
-   `chunks=N corrections=M`, el campo `correction_ids` en cada línea del JSONL
-   (correcciones aplicadas a páginas que cubre ese chunk; no afirma que el
-   tramo sustituido caiga dentro de ese chunk) y `corrections_applied` (lista
-   de ids) en el resultado del paso; el resultado final del Workflow incluye
-   el conteo.
+   `chunks=N corrections=M corrections_rev=R corrections_pending=0|1`, el campo
+   `correction_ids` en cada línea del JSONL (correcciones aplicadas a páginas
+   que cubre ese chunk; no afirma que el tramo sustituido caiga dentro de ese
+   chunk) y `corrections_applied` (lista de ids), `corrections_rev` y
+   `corrections_pending` en el resultado del paso; el resultado final del
+   Workflow incluye el conteo y `corrections_pending`.
 
 Efectos aguas abajo: al cambiar el texto cambia `text_sha256` y por tanto el id
 del chunk (y, si cambian los límites, el de los siguientes). Los lotes de
@@ -87,13 +115,11 @@ embeddings cuyos ids ya no coinciden se recalculan (coste de embeddings, no de
 OCR) y el manifiesto de Vectorize borra los ids viejos con `deleteByIds`.
 Borrar la corrección y reprocesar restaura los chunks originales.
 
-Límites conocidos: la comparación se hace contra el texto de la página tal como
-lo devolvió el OCR normalizado, no contra el chunk. Coincide con el texto de los
-chunks salvo en tablas HTML (el chunker las convierte a Markdown) y en
-cabeceras/pies repetidos que el chunker elimina después; en esos casos el
-administrador debe usar el texto tal como aparece en la página. Una corrección
-creada mientras el Workflow ya pasó el paso `chunk` no se aplica hasta el
-siguiente reproceso (los eventos `correct` dicen cuáles se aplicaron).
+Límites conocidos: las correcciones son por página física. Un chunk que une el
+final de una página con el principio de la siguiente se corrige página a
+página. La cabecera repetida de una tabla que continúa en la página siguiente
+no se muestra en el chunk (el chunker la descarta al unir), pero sigue en el
+texto preparado de esa página.
 
 Cada paso devuelve solo claves y conteos (< 1 MiB). Los pasos no reciben
 parámetros: el resultado de un paso anterior se toma de su valor de retorno, que
@@ -125,7 +151,8 @@ Nombres de paso en `processing_events`: `extract`, `correct`, `chunk`,
 - `domain/ingestion.py`: `IngestionParams`, `VersionRecord`, `OcrPage`,
   `OcrResult`, `ErrorCode`, `IngestionError` y `sanitize_detail`.
 - `domain/chunking.py`: `PageText`, `Chunk` y el esquema de ids (C1).
-- `domain/corrections.py`: `TextCorrection` y `AppliedCorrection`.
+- `domain/corrections.py`: `TextCorrection`, `CorrectionSet` (correcciones +
+  `corrections_rev`) y `AppliedCorrection`.
 - `ports.py`: `BlobStore`, `OcrClient`, `Embedder`, `VersionRepository` y
   `VectorIndex`.
 - `services/ingestion.py`: casos de uso por etapa (`mark_processing`, `run_ocr`,
@@ -163,8 +190,10 @@ chunks** en el código: con Workers Paid un documento de miles de chunks cabe
 holgadamente en 10 000, pero debe verificarse en D1 real antes de ingerir
 documentos grandes.
 
-`LOG_EVENT` y `ACTIVE_CORRECTIONS` son copias de los bloques `log_event` y
-`active_corrections_by_version` de `infra/d1/queries.sql`; un test comprueba que
+`LOG_EVENT`, `ACTIVE_CORRECTIONS`, `CORRECTIONS_REV` y
+`CLEAR_CORRECTIONS_DIRTY` son copias de los bloques `log_event`,
+`active_corrections_by_version`, `corrections_rev_by_version` y
+`clear_corrections_dirty` de `infra/d1/queries.sql`; un test comprueba que
 siguen siendo iguales. Las demás sentencias son propias de la
 ingesta: transiciones con `WHERE status IN (...)` idempotentes, borrado e
 inserción de chunks, `chunker_version` y `embedding_model`. Ninguna escribe

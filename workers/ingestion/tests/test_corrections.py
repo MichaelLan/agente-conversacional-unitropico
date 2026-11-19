@@ -1,5 +1,6 @@
 import asyncio
 import json
+import sqlite3
 
 import pytest
 from fakes import FakeD1, FakeOcr, FakeStep
@@ -9,6 +10,7 @@ from unitropico_ingestion.domain.chunking import PageText
 from unitropico_ingestion.domain.corrections import TextCorrection
 from unitropico_ingestion.domain.ingestion import ErrorCode, IngestionError
 from unitropico_ingestion.infra.d1_repository import D1VersionRepository
+from unitropico_ingestion.services.chunker import StructuralChunker
 from unitropico_ingestion.services.corrections import apply_corrections, count_matches
 from unitropico_ingestion.services.ingestion import chunks_key
 from unitropico_ingestion.services.preprocess import normalize_text
@@ -172,19 +174,26 @@ def test_normalize_text_is_idempotent_on_ocr_pages():
 
 # -- adapter ----------------------------------------------------------------------
 def test_repository_returns_active_corrections_in_order():
-    """Deleted rows are skipped; order is created_at, then id."""
+    """Deleted rows are skipped; order is created_at, then insertion (rowid)."""
     world = World()
-    add_correction(world.db, "cor-b", created_at="2030-01-02T00:00:00.000Z")
-    add_correction(world.db, "cor-a", created_at="2030-01-02T00:00:00.000Z")
+    same = "2030-01-02T00:00:00.000Z"
+    add_correction(world.db, "cor-b", find="promedio", created_at=same)
+    add_correction(world.db, "cor-a", created_at=same)
     add_correction(world.db, "cor-0", page=3, created_at="2030-01-01T00:00:00.000Z")
-    add_correction(world.db, "cor-del", created_at="2030-01-03T00:00:00.000Z")
+    add_correction(
+        world.db, "cor-del", find="acreditar", created_at="2030-01-03T00:00:00.000Z"
+    )
     world.db.conn.execute(
         "UPDATE text_corrections SET deleted_at = '2030-02-01T00:00:00.000Z' "
         "WHERE id = 'cor-del'"
     )
-    found = asyncio.run(D1VersionRepository(world.db).active_corrections(VERSION_ID))
-    assert [c.id for c in found] == ["cor-0", "cor-a", "cor-b"]
-    assert found[0] == TextCorrection("cor-0", 3, WRONG, RIGHT)
+    found = asyncio.run(D1VersionRepository(world.db).correction_set(VERSION_ID))
+    # cor-b was inserted before cor-a with the same created_at: rowid decides,
+    # never the (random in production) id.
+    assert [c.id for c in found.corrections] == ["cor-0", "cor-b", "cor-a"]
+    assert found.corrections[0] == TextCorrection("cor-0", 3, WRONG, RIGHT)
+    assert found.corrections[1].find_text == "promedio"
+    assert found.revision == 5  # four creations and one logical delete
 
 
 # -- workflow ---------------------------------------------------------------------
@@ -212,7 +221,8 @@ def test_page_18_correction_is_applied_and_traced():
         "chunk",
         "succeeded",
         None,
-        f"chunks={result['chunk_count']} corrections=1",
+        f"chunks={result['chunk_count']} corrections=1 corrections_rev=1 "
+        "corrections_pending=0",
     ) in (events)
 
     lines = [
@@ -303,3 +313,152 @@ def test_reprocess_reuses_ocr_applies_correction_and_replaces_vectors():
     world.run(FakeStep())
     assert world.chunk_ids() == first_ids and world.ocr.calls == 1
     assert set(world.index.vectors) == set(first_ids)
+
+
+# -- pending corrections (corrections_dirty) ---------------------------------------
+def _dirty(world: World) -> tuple[int, int]:
+    row = world.db.version(VERSION_ID)
+    return row["corrections_dirty"], row["corrections_rev"]
+
+
+def test_applied_corrections_clear_the_pending_flag():
+    """Creating a correction marks the version dirty; the chunk step clears it."""
+    world = _world()
+    add_correction(world.db, "cor-p18")
+    assert _dirty(world) == (1, 1)
+    result = world.run()
+    assert result["corrections_pending"] is False
+    assert _dirty(world) == (0, 1)
+
+
+class _RacingRepository(D1VersionRepository):
+    """Creates a correction right after the chunk step read the corrections."""
+
+    def __init__(self, db: FakeD1, **correction: object):
+        super().__init__(db)
+        self._db_fake = db
+        self._correction = correction
+
+    async def correction_set(self, version_id: str):
+        found = await super().correction_set(version_id)
+        if self._correction:
+            add_correction(self._db_fake, **self._correction)  # type: ignore[arg-type]
+            self._correction = {}
+        return found
+
+
+def test_correction_created_during_the_chunk_step_stays_pending():
+    """A correction added after the read is not applied: the flag stays set."""
+    world = _world()
+    world.run()  # page_count = 18 is known now
+    add_correction(world.db, "cor-p18")
+    racing = _RacingRepository(
+        world.db, correction_id="cor-late", page=3, find="TEMA 3", replace="TEMA III"
+    )
+    result = world.run(FakeStep(), repository=racing)
+    assert result["corrections_applied"] == 1  # only cor-p18
+    assert result["corrections_pending"] is True
+    assert "TEMA 3" in _texts(world)
+    assert _dirty(world) == (1, 2)
+    events = _events(world)
+    assert any(
+        e[0] == "chunk" and e[3].endswith("corrections_rev=1 corrections_pending=1")
+        for e in events
+    )
+    # The version cannot be published until a new run applies cor-late.
+    world.db.conn.execute(
+        "UPDATE document_versions SET status = 'ready', requires_review = 0 "
+        "WHERE id = ?",
+        (VERSION_ID,),
+    )
+    with pytest.raises(sqlite3.IntegrityError, match="corrections_pending"):
+        world.db.conn.execute(
+            "UPDATE document_versions SET status = 'published', "
+            "published_at = '2030-01-01T00:00:00.000Z' WHERE id = ?",
+            (VERSION_ID,),
+        )
+    result = world.run(FakeStep())
+    assert result["corrections_applied"] == 2 and not result["corrections_pending"]
+    assert "TEMA III" in _texts(world) and _dirty(world) == (0, 2)
+
+
+# -- corrections target the prepared text (what the administrator sees) ------------
+TABLE_PAGE = (
+    "Texto previo del documento con contenido.\n\n<table><tr><th>Programa</th>"
+    "<th>Nota</th></tr><tr><td>Ciencia &amp; Tecnologia</td><td><b>igual</b> a "
+    "3.0</td></tr></table>"
+)
+
+
+def _chunk_texts(pages: list[PageText], corrections=()) -> list[str]:
+    chunker = StructuralChunker()
+    prepared, _ = apply_corrections(chunker.prepare(pages), list(corrections))
+    return [c.text for c in chunker.chunk_prepared(prepared, version_id="v1")]
+
+
+@pytest.mark.parametrize(
+    "find",
+    [
+        "Ciencia & Tecnologia",
+        "igual a 3.0",
+        "| Ciencia & Tecnologia | igual a 3.0 |",  # a whole row copied from a chunk
+    ],
+)
+def test_text_copied_from_a_table_chunk_matches(find):
+    """HTML tables are matched as the Markdown rows shown in the chunks."""
+    pages = [PageText(1, TABLE_PAGE)]
+    assert "| Ciencia & Tecnologia | igual a 3.0 |" in _chunk_texts(pages)[0]
+    replace = find.replace("Tecnologia", "Tecnología").replace("3.0", "3,0")
+    texts = _chunk_texts(pages, [TextCorrection("c1", 1, find, replace)])
+    assert replace in texts[0] and "<table" not in texts[0]
+
+
+def test_raw_html_is_not_matchable():
+    """Markup the administrator never sees does not count as a match."""
+    with pytest.raises(IngestionError, match="correction_not_applicable") as info:
+        _chunk_texts([PageText(1, TABLE_PAGE)], [TextCorrection("c1", 1, "&amp;", "y")])
+    assert info.value.detail.endswith("matches=0")
+
+
+HEADER = "Universidad Internacional del Tropico Americano"
+
+
+def _boilerplate_pages() -> list[PageText]:
+    pages = [
+        PageText(i, f"{HEADER}\n\nContenido de la pagina {i} sobre becas y apoyos.")
+        for i in range(1, 5)
+    ]
+    pages[2] = PageText(3, f"{HEADER}\n\nLa {HEADER} otorga becas.")
+    return pages
+
+
+def test_hidden_running_header_does_not_count():
+    """A repeated header removed from the chunks is not a second match."""
+    pages = _boilerplate_pages()
+    assert "\n".join(_chunk_texts(pages)).count(HEADER) == 2  # p1 header + p3 body
+    texts = _chunk_texts(pages, [TextCorrection("c1", 3, "Tropico", "Trópico")])
+    joined = "\n".join(texts)
+    assert "La Universidad Internacional del Trópico Americano otorga" in joined
+    assert joined.count("Tropico") == 1  # the header kept on page 1
+
+
+def test_replacement_keeps_untouched_lines_and_normalizes_touched_ones():
+    """Spaces of the replacement are collapsed like the chunker's normalization."""
+    prepared = StructuralChunker().prepare([PageText(1, TABLE_PAGE)])
+    corrected, _ = apply_corrections(
+        prepared, [TextCorrection("c1", 1, "previo", "  previo​  y ")]
+    )
+    lines = [line for line in corrected[0].text.split("\n") if line]
+    assert lines[0] == "Texto previo y del documento con contenido."
+    assert lines[1:] == [line for line in prepared[0].text.split("\n") if line][1:]
+
+
+def test_no_corrections_keep_the_exact_chunks():
+    """Prepare + chunk_prepared without corrections == chunk (same ids)."""
+    for pages in (_boilerplate_pages(), [PageText(1, TABLE_PAGE)]):
+        chunker = StructuralChunker(min_chars=20)
+        prepared, applied = apply_corrections(chunker.prepare(pages), [])
+        assert applied == []
+        assert chunker.chunk_prepared(prepared, version_id="v") == chunker.chunk(
+            pages, version_id="v"
+        )

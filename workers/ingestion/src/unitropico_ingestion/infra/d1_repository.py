@@ -5,9 +5,11 @@ The binding is the SDK-wrapped D1 database: ``prepare(sql).bind(*args)`` with
 as Python dicts (or attribute objects) shaped ``{"results": [...], "meta":
 {"changes": n, ...}}``.
 
-``LOG_EVENT`` and ``ACTIVE_CORRECTIONS`` are verbatim copies of the canonical
-``log_event`` and ``active_corrections_by_version`` blocks of
-``infra/d1/queries.sql`` (a test keeps them identical). The other statements
+``LOG_EVENT``, ``ACTIVE_CORRECTIONS``, ``CORRECTIONS_REV`` and
+``CLEAR_CORRECTIONS_DIRTY`` are verbatim copies of the canonical ``log_event``,
+``active_corrections_by_version``, ``corrections_rev_by_version`` and
+``clear_corrections_dirty`` blocks of ``infra/d1/queries.sql`` (a test keeps
+them identical). The other statements
 are specific to the ingestion state machine and are not yet in that file.
 Status transitions are also enforced by the schema triggers; the ``WHERE``
 clauses make every write idempotent and never target ``published``.
@@ -16,7 +18,7 @@ clauses make every write idempotent and never target ``published``.
 from collections.abc import Mapping, Sequence
 
 from unitropico_ingestion.domain.chunking import Chunk
-from unitropico_ingestion.domain.corrections import TextCorrection
+from unitropico_ingestion.domain.corrections import CorrectionSet, TextCorrection
 from unitropico_ingestion.domain.ingestion import VersionRecord
 from unitropico_ingestion.services.ingestion import token_estimate
 
@@ -27,7 +29,12 @@ VALUES (?1, ?2, ?3, ?4, ?5);"""
 ACTIVE_CORRECTIONS = """SELECT id, page_number, find_text, replace_text
 FROM text_corrections
 WHERE version_id = ?1 AND deleted_at IS NULL
-ORDER BY created_at, id;"""
+ORDER BY created_at, rowid;"""
+
+CORRECTIONS_REV = "SELECT corrections_rev FROM document_versions WHERE id = ?1;"
+
+CLEAR_CORRECTIONS_DIRTY = """UPDATE document_versions SET corrections_dirty = 0
+WHERE id = ?1 AND corrections_rev = ?2 AND status = 'extracted';"""
 
 GET_VERSION = """SELECT id, document_id, status, source_r2_key, source_sha256,
        requires_review
@@ -132,11 +139,20 @@ class D1VersionRepository:
             await self._run(MARK_EXTRACTED, version_id, page_count, extraction_key) > 0
         )
 
-    async def active_corrections(self, version_id: str) -> list[TextCorrection]:
-        """Return the active corrections in application order."""
-        result = await self._stmt(ACTIVE_CORRECTIONS, version_id).all()  # type: ignore[attr-defined]
-        rows = _field(result, "results", None) or []
-        return [
+    async def correction_set(self, version_id: str) -> CorrectionSet:
+        """Return revision and active corrections from one atomic batch."""
+        rev_result, rows_result = list(
+            await self._db.batch(  # type: ignore[attr-defined]
+                [
+                    self._stmt(CORRECTIONS_REV, version_id),
+                    self._stmt(ACTIVE_CORRECTIONS, version_id),
+                ]
+            )
+        )
+        revs = _field(rev_result, "results", None) or []
+        revision = int(_field(revs[0], "corrections_rev", 0)) if revs else 0  # type: ignore[arg-type]
+        rows = _field(rows_result, "results", None) or []
+        corrections = [
             TextCorrection(
                 id=str(_field(row, "id")),
                 page_number=int(_field(row, "page_number")),  # type: ignore[arg-type]
@@ -145,11 +161,21 @@ class D1VersionRepository:
             )
             for row in rows
         ]
+        return CorrectionSet(revision, tuple(corrections))
 
     async def replace_chunks(
-        self, version_id: str, *, chunker_version: str, chunks: Sequence[Chunk]
-    ) -> None:
-        """Delete and insert chunks in atomic batches (first batch deletes)."""
+        self,
+        version_id: str,
+        *,
+        chunker_version: str,
+        chunks: Sequence[Chunk],
+        corrections_rev: int | None = None,
+    ) -> bool:
+        """Delete and insert chunks in atomic batches (first batch deletes).
+
+        The last batch sets the chunker version and, with ``corrections_rev``,
+        clears ``corrections_dirty`` by compare-and-set on the revision.
+        """
         statements = [self._stmt(DELETE_CHUNKS, version_id)]
         statements += [
             self._stmt(
@@ -167,10 +193,18 @@ class D1VersionRepository:
             for chunk in chunks
         ]
         statements.append(self._stmt(SET_CHUNKER_VERSION, version_id, chunker_version))
-        for start in range(0, len(statements), STATEMENTS_PER_BATCH):
-            await self._db.batch(  # type: ignore[attr-defined]
-                statements[start : start + STATEMENTS_PER_BATCH]
+        if corrections_rev is not None:
+            statements.append(
+                self._stmt(CLEAR_CORRECTIONS_DIRTY, version_id, corrections_rev)
             )
+        results: list = []
+        for start in range(0, len(statements), STATEMENTS_PER_BATCH):
+            results = list(
+                await self._db.batch(  # type: ignore[attr-defined]
+                    statements[start : start + STATEMENTS_PER_BATCH]
+                )
+            )
+        return corrections_rev is not None and _changes(results[-1]) > 0
 
     async def set_embedding_model(self, version_id: str, model: str) -> None:
         """Record the embedding model on the version chunks."""

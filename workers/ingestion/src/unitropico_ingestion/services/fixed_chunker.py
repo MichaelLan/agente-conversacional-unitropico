@@ -37,9 +37,18 @@ class FixedSizeChunker:
         """Return the constant identifying this baseline."""
         return FIXED_CHUNKER_VERSION
 
+    def prepare(self, pages: Sequence[PageText]) -> list[PageText]:
+        """Return the prepared pages (normalized, without boilerplate)."""
+        return prepare_pages(pages, strip_boilerplate=self.strip_boilerplate)
+
     def chunk(self, pages: Sequence[PageText], *, version_id: str) -> list[Chunk]:
         """Split the concatenated pages into overlapping windows."""
-        prepared = prepare_pages(pages, strip_boilerplate=self.strip_boilerplate)
+        return self.chunk_prepared(self.prepare(pages), version_id=version_id)
+
+    def chunk_prepared(
+        self, prepared: Sequence[PageText], *, version_id: str
+    ) -> list[Chunk]:
+        """Chunk pages already returned by ``prepare`` (possibly corrected)."""
         text = _PAGE_SEPARATOR.join(page.text for page in prepared)
         starts: list[int] = []
         offset = 0

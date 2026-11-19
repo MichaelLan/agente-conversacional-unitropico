@@ -25,6 +25,20 @@ class TextCorrection:
 
 
 @dataclass(frozen=True)
+class CorrectionSet:
+    """Active corrections read in one snapshot with the set revision.
+
+    ``revision`` is ``document_versions.corrections_rev`` (bumped by every
+    create or logical delete). The chunk step passes it back when it writes the
+    chunks, so the "corrections pending" flag is cleared only if no correction
+    changed since this read.
+    """
+
+    revision: int
+    corrections: tuple[TextCorrection, ...] = ()
+
+
+@dataclass(frozen=True)
 class AppliedCorrection:
     """Trace of one correction applied during chunking."""
 

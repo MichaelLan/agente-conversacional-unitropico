@@ -1,11 +1,15 @@
 """Apply the administrator's literal OCR corrections to page text.
 
-Matching rules (documented in the README):
+Matching rules (documented in the README and in the API help text):
 
-* The page text is first normalized with ``preprocess.normalize_text`` (the
-  same NFC, invisible-character, page-marker and horizontal-space rules the
-  chunkers apply), so the result is identical to what the chunker would see.
-* ``find_text`` is normalized the same way and compared literally: case,
+* Corrections target the *prepared* pages, ``Chunker.prepare(pages)``: the
+  same representation the administrator reviews in the chunks. Text is
+  normalized (NFC, invisible characters and page markers removed, horizontal
+  spaces collapsed), running headers/footers repeated across pages are
+  removed (only their first occurrence remains), and HTML tables are rendered
+  as Markdown rows (``| celda | celda |``) with entities decoded and tags
+  removed. Text the administrator cannot see therefore never counts.
+* ``find_text`` is normalized like the page text and compared literally: case,
   accents and punctuation must match exactly. The only relaxation is
   whitespace: any run of whitespace in ``find_text`` (spaces or line breaks)
   matches any run of whitespace in the page. This lets the administrator copy
@@ -25,7 +29,11 @@ from collections.abc import Sequence
 from unitropico_ingestion.domain.chunking import PageText
 from unitropico_ingestion.domain.corrections import AppliedCorrection, TextCorrection
 from unitropico_ingestion.domain.ingestion import ErrorCode, IngestionError
-from unitropico_ingestion.services.preprocess import normalize_text
+from unitropico_ingestion.services.preprocess import (
+    HORIZONTAL_SPACE,
+    INVISIBLE,
+    normalize_text,
+)
 
 
 def _pattern(find_text: str) -> re.Pattern[str] | None:
@@ -43,6 +51,29 @@ def count_matches(text: str, find_text: str) -> int:
     return sum(1 for _ in re.finditer(f"(?=(?:{pattern.pattern}))", text))
 
 
+def _replace(text: str, start: int, end: int, correction: TextCorrection) -> str:
+    """Replace ``text[start:end]`` and re-normalize only the touched lines.
+
+    The replacement gets NFC and loses invisible characters; the lines it
+    touches get their horizontal spaces collapsed and trimmed, as the
+    chunker's normalization would. Untouched lines keep their exact text.
+    """
+    replacement = unicodedata.normalize("NFC", correction.replace_text)
+    replacement = replacement.translate(INVISIBLE)
+    replacement = replacement.replace("\r\n", "\n").replace("\r", "\n")
+    line_start = text.rfind("\n", 0, start) + 1
+    line_end = text.find("\n", end)
+    line_end = len(text) if line_end < 0 else line_end
+    touched = text[line_start:start] + replacement + text[end:line_end]
+    lines = [HORIZONTAL_SPACE.sub(" ", line).strip() for line in touched.split("\n")]
+    return text[:line_start] + "\n".join(lines) + text[line_end:]
+
+
+def _tidy(text: str) -> str:
+    """Collapse blank-line runs left by a removal (structure is unchanged)."""
+    return re.sub(r"\n{3,}", "\n\n", text).strip()
+
+
 def _not_applicable(correction: TextCorrection, matches: int) -> IngestionError:
     return IngestionError(
         ErrorCode.CORRECTION_NOT_APPLICABLE,
@@ -56,10 +87,13 @@ def apply_corrections(
 ) -> tuple[list[PageText], list[AppliedCorrection]]:
     """Return the corrected pages and the applied corrections, in order.
 
-    Pages without corrections are returned unchanged, so a version without
-    active corrections produces exactly the same chunks as before. Raises a
-    permanent ``IngestionError(correction_not_applicable)`` when a correction
-    matches zero or several times (or targets a page absent from the OCR).
+    ``pages`` must be prepared pages (``Chunker.prepare``); they are matched
+    as they are, never normalized again. Pages without corrections are
+    returned unchanged, so a version without active corrections produces
+    exactly the same chunks as before. Raises a permanent
+    ``IngestionError(correction_not_applicable)`` when a correction matches
+    zero or several times (or targets a page absent from the prepared text,
+    e.g. a page without visible text).
     """
     if not corrections:
         return list(pages), []
@@ -70,7 +104,7 @@ def apply_corrections(
         number = correction.page_number
         if number not in texts:
             page = by_page.get(number)
-            texts[number] = normalize_text(page.text) if page is not None else ""
+            texts[number] = page.text if page is not None else ""
         text = texts[number]
         matches = count_matches(text, correction.find_text)
         if matches != 1:
@@ -79,11 +113,10 @@ def apply_corrections(
         found = pattern.search(text) if pattern is not None else None
         if found is None:  # unreachable when matches == 1
             raise _not_applicable(correction, 0)
-        replacement = unicodedata.normalize("NFC", correction.replace_text)
-        texts[number] = text[: found.start()] + replacement + text[found.end() :]
+        texts[number] = _replace(text, found.start(), found.end(), correction)
         applied.append(AppliedCorrection(correction.id, number))
     corrected = [
-        PageText(page.page_number, texts[page.page_number])
+        PageText(page.page_number, _tidy(texts[page.page_number]))
         if page.page_number in texts
         else page
         for page in pages

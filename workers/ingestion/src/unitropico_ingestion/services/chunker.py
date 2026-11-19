@@ -93,9 +93,25 @@ class StructuralChunker:
         """Return the constant identifying these chunking rules."""
         return STRUCTURAL_CHUNKER_VERSION
 
+    def prepare(self, pages: Sequence[PageText]) -> list[PageText]:
+        """Return the prepared pages this chunker segments.
+
+        Normalized, without running headers/footers and with HTML tables
+        rendered as Markdown: the representation the administrator reviews and
+        the one OCR corrections are matched against.
+        """
+        return prepare_pages(
+            pages, strip_boilerplate=self.strip_boilerplate, convert_tables=True
+        )
+
     def chunk(self, pages: Sequence[PageText], *, version_id: str) -> list[Chunk]:
         """Split one document version into ordered structural chunks."""
-        prepared = prepare_pages(pages, strip_boilerplate=self.strip_boilerplate)
+        return self.chunk_prepared(self.prepare(pages), version_id=version_id)
+
+    def chunk_prepared(
+        self, prepared: Sequence[PageText], *, version_id: str
+    ) -> list[Chunk]:
+        """Chunk pages already returned by ``prepare`` (possibly corrected)."""
         segments = _join_across_pages([_parse_page(page) for page in prepared])
         drafts = self._merge_small(self._pack(_assign_paths(segments)))
         rendered = self._with_overlap(drafts)
@@ -336,6 +352,10 @@ def _parse_lines(text: str, page: int, *, headings: bool = True) -> list[_Segmen
 
     wrapped_title = False
     for line in text.split("\n"):
+        if not line or is_table_line(line):
+            # A blank line or a table ends a pending wrapped title (the title is
+            # closed below); it used to raise IndexError on the next line.
+            wrapped_title = False
         if is_table_line(line):
             close_paragraph()
             table_lines.append(line)

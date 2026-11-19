@@ -1,3 +1,6 @@
+import hashlib
+from pathlib import Path
+
 import pytest
 from conftest import VERSION_ID
 
@@ -6,6 +9,7 @@ from unitropico_ingestion.services.chunker import (
     STRUCTURAL_CHUNKER_VERSION,
     StructuralChunker,
 )
+from unitropico_ingestion.services.ocr_parser import parse_ocr_response
 
 RESOLUCION = [
     PageText(
@@ -282,3 +286,72 @@ def test_rejects_invalid_parameters(kwargs):
     """Inconsistent size parameters fail fast."""
     with pytest.raises(ValueError):
         StructuralChunker(**kwargs)
+
+
+@pytest.mark.parametrize(
+    "after", ["\n\nJUVENTUD corta", "\n| a | b |\n| 1 | 2 |\nJUVENTUD"]
+)
+def test_wrapped_title_interrupted_by_blank_line_or_table(after):
+    """A blank line or a table closes a pending wrapped title (used to crash)."""
+    page = PageText(1, "9.5 COMPONENTE DE PROMOCIÓN PARA LA" + after)
+    chunks = StructuralChunker(min_chars=10).chunk([page], version_id="v")
+    assert "JUVENTUD" in chunks[-1].text
+    assert chunks[0].section == "9.5 COMPONENTE DE PROMOCIÓN PARA LA"
+
+
+# Chunk ids computed with the chunker before ``prepare``/``chunk_prepared``
+# existed (HTML tables were converted inside the segmentation): moving table
+# conversion into the prepared pages must not change a single id.
+FIXTURE = Path(__file__).parent / "fixtures/firecrawl_parse_response.json"
+_PINNED_IDS = {
+    "fixture": "dd145c132ce307fc142f01175beb0da5bb0d36e45b2993f46c7662e10a06db34",
+    "table": "986e157d03dee0ac37f7f1f80a39b6e342e6d128eb90c68e0fe12160cdfae104",
+    "merge": "de045d662d53806d4c71833e00dab8c1263c6f5055aaf752df61bc43bac6e77a",
+}
+_TABLE_PAGES = [
+    PageText(
+        1,
+        "ARTÍCULO 1. OBJETO. Texto previo del documento con contenido suficiente."
+        "\n\n<table><tr><th>Programa</th><th>Nota</th></tr><tr><td>Ciencia &amp; "
+        "Tecnolog&iacute;a</td><td><b>igual</b> a 3.0</td></tr><tr><td></td><td>"
+        "vacío</td></tr></table> texto después\n\nPARÁGRAFO. Otro texto.",
+    ),
+    PageText(
+        2,
+        "<table><tr><th>Programa</th><th>Nota</th></tr><tr><td>Artes</td><td>4.0"
+        "</td></tr></table>\n\ncontinuación del texto final.",
+    ),
+]
+_MERGE_PAGES = [
+    PageText(
+        1,
+        "ARTÍCULO 2. CUPOS.\n<table><tr><th>Programa</th><th>Cupos</th></tr><tr>"
+        "<td>Artes</td><td>10</td></tr></table>",
+    ),
+    PageText(
+        2,
+        "<table><tr><th>Programa</th><th>Cupos</th></tr><tr><td>M&uacute;sica</td>"
+        "<td>5</td></tr></table>\nARTÍCULO 3. VIGENCIA. Rige desde su expedición.",
+    ),
+]
+
+
+def _ids_digest(chunks) -> str:
+    return hashlib.sha256("\n".join(c.id for c in chunks).encode()).hexdigest()
+
+
+def test_chunk_ids_do_not_change_with_prepared_pages():
+    """Same ids as before the refactor, on the fixture and on table cases."""
+    raw = parse_ocr_response(FIXTURE.read_bytes())
+    fixture = [PageText(p.page_number, p.markdown) for p in raw.pages]
+    cases = {
+        "fixture": (fixture, StructuralChunker()),
+        "table": (_TABLE_PAGES, StructuralChunker(min_chars=20)),
+        "merge": (_MERGE_PAGES, StructuralChunker(min_chars=20)),
+    }
+    for name, (pages, chunker) in cases.items():
+        chunks = chunker.chunk(pages, version_id="ver-pin")
+        assert _ids_digest(chunks) == _PINNED_IDS[name], name
+        prepared = chunker.prepare(pages)
+        assert all("<table" not in page.text for page in prepared)
+        assert chunker.chunk_prepared(prepared, version_id="ver-pin") == chunks

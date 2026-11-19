@@ -203,26 +203,37 @@ async def chunk_version(
 ) -> dict:
     """Chunk the stored OCR by physical page and replace the version chunks.
 
-    The administrator's active text corrections are applied to the page text
-    before chunking (the cached OCR object is only read, never rewritten). A
+    The administrator's active text corrections are applied to the prepared
+    pages (``chunker.prepare``: the text shown in the chunks) right before
+    segmentation; the cached OCR object is only read, never rewritten. A
     correction that does not match exactly once fails the version with the
     permanent ``correction_not_applicable`` before anything is written.
+
+    The corrections are read in one snapshot with their revision
+    (``corrections_rev``); the chunk write clears ``corrections_dirty`` only
+    if that revision is still current, so a correction created or deleted
+    while this step ran keeps the version unpublishable until a new run.
     """
     raw = await blobs.get(ocr_key)
     if raw is None:
         raise IngestionError(ErrorCode.CHUNK_FAILED, "ocr_missing", permanent=True)
     result = parse_ocr_response(raw)
     pages = [PageText(page.page_number, page.markdown) for page in result.pages]
-    corrections = await repo.active_corrections(version_id)
-    pages, applied = apply_corrections(pages, corrections)
-    chunks = chunker.chunk(pages, version_id=version_id)
+    correction_set = await repo.correction_set(version_id)
+    prepared, applied = apply_corrections(
+        chunker.prepare(pages), correction_set.corrections
+    )
+    chunks = chunker.chunk_prepared(prepared, version_id=version_id)
     if not chunks:
         raise IngestionError(ErrorCode.OCR_EMPTY, "chunks=0", permanent=True)
     key = chunks_key(version_id, chunker.version)
     body = "".join(_chunk_line(chunk, applied) + "\n" for chunk in chunks)
     await blobs.put(key, body.encode("utf-8"), content_type="application/x-ndjson")
-    await repo.replace_chunks(
-        version_id, chunker_version=chunker.version, chunks=chunks
+    corrections_clean = await repo.replace_chunks(
+        version_id,
+        chunker_version=chunker.version,
+        chunks=chunks,
+        corrections_rev=correction_set.revision,
     )
     for item in applied:
         await repo.log_event(
@@ -235,7 +246,11 @@ async def chunk_version(
         version_id,
         step="chunk",
         status="succeeded",
-        detail=f"chunks={len(chunks)} corrections={len(applied)}",
+        detail=(
+            f"chunks={len(chunks)} corrections={len(applied)} "
+            f"corrections_rev={correction_set.revision} "
+            f"corrections_pending={int(not corrections_clean)}"
+        ),
     )
     await repo.log_event(version_id, step="index_fts", status="succeeded")
     return {
@@ -243,6 +258,8 @@ async def chunk_version(
         "chunk_count": len(chunks),
         "chunker_version": chunker.version,
         "corrections_applied": [correction.id for correction in applied],
+        "corrections_rev": correction_set.revision,
+        "corrections_pending": not corrections_clean,
     }
 
 
