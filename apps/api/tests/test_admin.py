@@ -100,6 +100,10 @@ ROUTES = [
     ("GET", "/admin/versions/v1/corrections"),
     ("POST", "/admin/versions/v1/corrections"),
     ("DELETE", "/admin/versions/v1/corrections/cor_1"),
+    ("GET", "/admin/versions/v1/pages"),
+    ("GET", "/admin/versions/v1/page-overrides"),
+    ("POST", "/admin/versions/v1/page-overrides"),
+    ("DELETE", "/admin/versions/v1/page-overrides/pov_1"),
 ]
 
 

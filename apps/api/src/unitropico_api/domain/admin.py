@@ -1,4 +1,4 @@
-"""Admin catalog contract v1 (docs/IMPLEMENTATION_STATUS.md, section 4b)."""
+"""Admin catalog contract v1 (docs/IMPLEMENTATION_STATUS.md, sections 4 and 4c)."""
 
 import hashlib
 import re
@@ -40,6 +40,16 @@ DUPLICATE_CORRECTION = (
 MAX_FIND_TEXT = 500
 MAX_REPLACE_TEXT = 500
 MAX_REASON = 300
+MAX_OVERRIDE_TEXT = 20000
+"""Characters (code points) of a page override, after trimming both ends."""
+OVERRIDE_EXISTS = (
+    "override_exists",
+    "Ya existe una sustitución activa para esa página: bórrela primero.",
+)
+PAGE_TEXT_UNAVAILABLE = (
+    "page_text_unavailable",
+    "El texto de las páginas no está disponible: reprocese la versión para generarlo.",
+)
 
 VersionStatus = Literal[
     "uploaded",
@@ -197,6 +207,15 @@ def _no_control_chars(value: str) -> str:
     return value
 
 
+def _no_control_chars_strict(value: str) -> str:
+    """Like ``_no_control_chars`` but only tab and line feed are allowed (4c)."""
+    for ch in value:
+        category = unicodedata.category(ch)
+        if (category == "Cc" and ch not in "\t\n") or category == "Cf":
+            raise ValueError("no se admiten caracteres de control ni de formato")
+    return value
+
+
 FindText = Annotated[
     str,
     StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_FIND_TEXT),
@@ -249,6 +268,47 @@ class CorrectionCreate(BaseModel):
         return self
 
 
+OverrideText = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True, min_length=1, max_length=MAX_OVERRIDE_TEXT
+    ),
+    AfterValidator(_no_control_chars_strict),
+]
+OverrideReason = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_REASON),
+    AfterValidator(_no_control_chars_strict),
+]
+
+OVERRIDE_RULE_HELP = (
+    "El texto sustituye por completo el texto de la página física indicada en "
+    "el próximo reprocesamiento, antes de aplicar las correcciones literales de "
+    "esa página (que entonces se buscan en este texto). Se prepara igual que el "
+    "texto del OCR de una página: espacios colapsados, caracteres invisibles "
+    "eliminados y tablas HTML convertidas a filas Markdown; los encabezados y "
+    "pies repetidos NO se eliminan. Máximo una sustitución activa por página."
+)
+
+
+class OverrideCreate(BaseModel):
+    """Body of POST /admin/versions/{id}/page-overrides (full page text)."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    page_number: Annotated[int, Field(ge=1)]
+    text: Annotated[OverrideText, Field(description=OVERRIDE_RULE_HELP)]
+    reason: OverrideReason
+
+
+class PagesQuery(BaseModel):
+    """Query parameters of GET /admin/versions/{id}/pages."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    page: Annotated[int, Field(ge=1, le=100_000)]
+
+
 class DocumentSummary(BaseModel):
     """Logical document fields shown in the admin panel."""
 
@@ -279,7 +339,7 @@ class VersionSummary(BaseModel):
     updated_at: str
     published_at: str | None
     corrections_dirty: bool
-    """Corrections were created or deleted after the last applied chunking.
+    """Corrections or page overrides changed after the last applied chunking.
 
     While true the version cannot be marked reviewed nor published (409
     ``corrections_pending``): reprocess it so the ingestion applies them.
@@ -399,11 +459,56 @@ class CorrectionList(BaseModel):
     match_rule: str = MATCH_RULE_HELP
 
 
+class PageOverrideView(BaseModel):
+    """A recorded page override; deleted ones are kept for traceability."""
+
+    id: str
+    version_id: str
+    page_number: int
+    text: str
+    reason: str
+    created_at: str
+    deleted_at: str | None
+    active: bool
+
+
+class OverrideList(BaseModel):
+    """Response of GET /admin/versions/{id}/page-overrides."""
+
+    version_id: str
+    overrides: list[PageOverrideView]
+
+
+class PageTextView(BaseModel):
+    """Response of GET /admin/versions/{id}/pages?page=N.
+
+    Final prepared text of one page as the last chunk step produced it (read
+    from ``pages/{version_id}/{chunker_version}.json`` in R2).
+    """
+
+    version_id: str
+    page_number: int
+    page_count: int
+    text: str
+    source: Literal["ocr", "override"]
+    override_id: str | None
+    corrections_applied: list[str]
+    chunker_version: str
+
+
 REPROCESS_NOTICE = (
     "El cambio se aplicará cuando se reprocese la versión "
     "(POST /admin/versions/{id}/reprocess); no se reprocesa automáticamente. "
     "La versión vuelve a requerir revisión y no podrá marcarse como revisada ni "
     "publicarse hasta que el reprocesamiento aplique las correcciones."
+)
+
+
+OVERRIDE_NOTICE = (
+    "El cambio se aplicará cuando se reprocese la versión "
+    "(POST /admin/versions/{id}/reprocess); no se reprocesa automáticamente. "
+    "La versión vuelve a requerir revisión y no podrá marcarse como revisada ni "
+    "publicarse hasta que el reprocesamiento aplique la sustitución de página."
 )
 
 
@@ -416,6 +521,28 @@ class CorrectionResult(BaseModel):
     corrections_dirty: bool
     reprocess_required: bool = True
     message: str = REPROCESS_NOTICE
+
+
+class OverrideResult(BaseModel):
+    """Response of POST/DELETE on page overrides: never triggers a reprocess."""
+
+    override: PageOverrideView
+    version_status: VersionStatus
+    requires_review: bool
+    corrections_dirty: bool
+    reprocess_required: bool = True
+    message: str = OVERRIDE_NOTICE
+
+
+@dataclass(frozen=True, slots=True)
+class NewOverride:
+    """Validated page override ready to be stored."""
+
+    id: str
+    version_id: str
+    page_number: int
+    text: str
+    reason: str
 
 
 @dataclass(frozen=True, slots=True)

@@ -117,6 +117,18 @@ def early_public_body_rejection(
 
 ADMIN_BODY_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 MAX_ADMIN_BODY_BYTES = 64 * 1024
+# A page override holds up to 20000 code points; JSON-escaped (\uXXXX, 12 bytes
+# per astral code point) that is at most ~240 KB plus a 300-character reason.
+MAX_PAGE_OVERRIDE_BODY_BYTES = 256 * 1024
+_PAGE_OVERRIDES_PATH = re.compile(r"^/admin/versions/[^/]+/page-overrides$")
+
+
+def admin_body_limit(method: str, normalized_path: str) -> int:
+    """Body limit of an admin request: 256 KiB only for POST page-overrides."""
+    if method.upper() == "POST" and _PAGE_OVERRIDES_PATH.match(normalized_path):
+        return MAX_PAGE_OVERRIDE_BODY_BYTES
+    return MAX_ADMIN_BODY_BYTES
+
 
 Rejection = tuple[int, dict[str, str], dict[str, dict[str, str]]]
 
@@ -126,13 +138,15 @@ def early_admin_rejection(
     path: str,
     header: Callable[[str], str | None],
     token: str | None,
-    max_bytes: int = MAX_ADMIN_BODY_BYTES,
+    max_bytes: int | None = None,
 ) -> Rejection | None:
     """Authenticate every non-upload /admin/* request before its body is read.
 
     Order: 503 (no token), 401, then for methods with a body 413 when
-    Content-Length exceeds `max_bytes` and 411 when it is missing or invalid on
-    a chunked body. Uploads have their own check; other paths continue.
+    Content-Length exceeds the limit and 411 when it is missing or invalid on
+    a chunked body. The limit is `max_bytes` when given, else
+    `admin_body_limit` (64 KiB; 256 KiB for POST .../page-overrides). Uploads
+    have their own check; other paths continue.
     """
     normalized = posixpath.normpath(_SLASHES.sub("/", path))
     if is_upload_request(method, path) or not (
@@ -151,6 +165,8 @@ def early_admin_rejection(
         return status, headers, error_body(error.code, error.message)
     if method.upper() not in ADMIN_BODY_METHODS:
         return None
+    if max_bytes is None:
+        max_bytes = admin_body_limit(method, normalized)
     length = (header("content-length") or "").strip()
     if length.isascii() and length.isdigit():
         if int(length) > max_bytes:

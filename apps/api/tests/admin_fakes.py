@@ -165,6 +165,16 @@ class FakeBlobs:
         self.puts += 1
         return True
 
+    async def get_json(self, key: str) -> object | None:
+        """Parse a stored object as JSON; invalid JSON reads as absent."""
+        data = self.objects.get(key)
+        if data is None:
+            return None
+        try:
+            return json.loads(data)
+        except ValueError:
+            return None
+
 
 class FakeLauncher:
     """IngestionLauncher double with configurable failures."""

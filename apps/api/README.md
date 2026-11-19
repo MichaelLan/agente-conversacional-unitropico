@@ -84,8 +84,13 @@ ruta `/admin/*` (ruta normalizada: `//` y `/` final):
   misma `check_admin_token`/`hmac.compare_digest` que FastAPI).
 - Con token válido, `POST`/`PUT`/`PATCH`/`DELETE`: 413 `payload_too_large` si
   `Content-Length` > 64 KiB; 411 `length_required` si falta en un cuerpo
-  `chunked`. `POST /admin/uploads` conserva su propio límite
-  (`ADMIN_MAX_UPLOAD_BYTES`; 411 si falta `Content-Length`, 413 si lo supera).
+  `chunked`. Única excepción explícita: `POST /admin/versions/{id}/page-overrides`
+  admite hasta **256 KiB** (`MAX_PAGE_OVERRIDE_BODY_BYTES`, `admin_body_limit`):
+  20 000 caracteres son hasta ~80 KB en UTF-8 crudo (caracteres de 4 bytes) y
+  ~240 KB si el cliente escapa todo como `\uXXXX`; el resto de rutas (incluido
+  `DELETE …/page-overrides/{oid}`) sigue en 64 KiB. `POST /admin/uploads`
+  conserva su propio límite (`ADMIN_MAX_UPLOAD_BYTES`; 411 si falta
+  `Content-Length`, 413 si lo supera).
 - Cualquier otro método o ruta sigue a FastAPI, que repite auth y límites como
   defensa en profundidad.
 
@@ -110,6 +115,10 @@ Errores: `{"error": {"code": "...", "message": "texto en español"}}`; también 
 | `GET /admin/versions/{id}/corrections` | `{version_id, corrections: [...], match_rule}` (activas y borradas) | 404 `version_not_found` |
 | `POST /admin/versions/{id}/corrections` | 201 `{correction, version_status, requires_review, corrections_dirty, reprocess_required, message}` | 404, 409 `version_published`/`duplicate_correction`/`too_many_corrections`, 422 `invalid_request`/`page_out_of_range` |
 | `DELETE /admin/versions/{id}/corrections/{cid}` | 200, mismo sobre que el POST | 404 `version_not_found`/`correction_not_found`, 409 `version_published` |
+| `GET /admin/versions/{id}/pages?page=N` | `{version_id, page_number, page_count, text, source: "ocr"\|"override", override_id, corrections_applied, chunker_version}` | 404 `version_not_found`/`page_text_unavailable`, 422 `invalid_request`/`page_out_of_range` |
+| `GET /admin/versions/{id}/page-overrides` | `{version_id, overrides: [...]}` (activas y borradas) | 404 `version_not_found` |
+| `POST /admin/versions/{id}/page-overrides` | 201 `{override, version_status, requires_review, corrections_dirty, reprocess_required, message}` | 404, 409 `version_published`/`override_exists`, 422 `invalid_request`/`page_out_of_range` |
+| `DELETE /admin/versions/{id}/page-overrides/{oid}` | 200, mismo sobre que el POST (`active: false`) | 404 `version_not_found`/`override_not_found`, 409 `version_published` |
 
 Detalles:
 - **Upload**: cuerpo binario `application/pdf` (se aceptan parámetros de media
@@ -266,6 +275,44 @@ la versión acabe en `review_required`. El panel puede usarla para mostrar
   `failed` con `error_code = correction_not_applicable` y `error_detail =
   "step=chunk correction=<cid> page=<n> matches=<k>"` (visible en
   `GET /admin/versions/{id}`); se borra o se rehace la corrección y se reprocesa.
+
+### Sustitución de página completa (contrato 4c)
+
+Para páginas que las correcciones literales no arreglan (diagramas, tablas
+como imagen, texto inventado por el OCR). Mismo Bearer, rechazo temprano y
+sobre de error que el resto de `/admin/*`.
+
+- **`GET /admin/versions/{id}/pages?page=N`**: texto preparado final de la
+  página tal como lo dejó el último paso `chunk` (sustitución + correcciones),
+  leído de R2 en `pages/{version_id}/{chunker_version}.json` (puerto
+  `BlobStore.get_json`; `chunker_version` sale de D1). `page` entero ≥ 1
+  obligatorio (si no, 422 `invalid_request`); por encima del `page_count` → 422
+  `page_out_of_range`. Sin `chunker_version`, sin JSON (versión procesada antes
+  de este pipeline) o con un JSON que no corresponde a la versión/chunker o está
+  mal formado → 404 `page_text_unavailable` (hay que reprocesar). Una página sin
+  texto visible devuelve `text: ""`.
+- **`GET /admin/versions/{id}/page-overrides`**: todas, por `created_at, rowid`;
+  `O = {id, version_id, page_number, text, reason, created_at, deleted_at, active}`.
+- **`POST /admin/versions/{id}/page-overrides`**: JSON estricto
+  `{page_number ≥ 1, text, reason}` (extras prohibidos, sin coerción). `text` y
+  `reason` se recortan en los extremos y deben quedar en 1..20000 y 1..300
+  caracteres (code points). Caracteres `Cc` salvo `\n` y `\t` (también `\r`) y
+  cualquier `Cf` → 422 `invalid_request`. Página > `page_count` conocido → 422
+  `page_out_of_range` (con `page_count` desconocido se acepta; la ingesta falla
+  con `correction_not_applicable` si la página no existe). Versión publicada →
+  409 `version_published`. Ya hay una activa para esa página → 409
+  `override_exists` (bórrela primero): se comprueba en el servicio y, de forma
+  atómica, con el índice único parcial `page_overrides_active_unique`; la
+  inserción, la invalidación de la revisión (`requires_review = 1`,
+  `ready`/`unpublished` → `review_required`) y el evento `correct`
+  `override_created id=… page=…` van en un único batch. Los triggers ponen
+  `corrections_dirty = 1` y suben `corrections_rev`, así que revisar/publicar
+  da 409 `corrections_pending` hasta reprocesar. Id `pov_<32 hex>`.
+- **`DELETE /admin/versions/{id}/page-overrides/{oid}`**: borrado lógico
+  idempotente (evento `override_deleted id=…` solo la primera vez, misma regla
+  de revisión); 404 `override_not_found` si no existe o es de otra versión, 409
+  `version_published`.
+- Reglas de aplicación (ingesta): ver `workers/ingestion/README.md`.
 
 **Capas**: `domain/admin.py` (DTOs Pydantic, errores, ids), `services/admin.py`
 (`AdminService` y los puertos `DocumentRepository`, `BlobStore`,

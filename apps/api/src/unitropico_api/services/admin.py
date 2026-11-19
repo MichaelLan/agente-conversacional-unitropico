@@ -9,6 +9,8 @@ from unitropico_api.domain.admin import (
     DEFAULT_MAX_UPLOAD_BYTES,
     DUPLICATE_CORRECTION,
     MAX_ACTIVE_CORRECTIONS,
+    OVERRIDE_EXISTS,
+    PAGE_TEXT_UNAVAILABLE,
     PDF_MAGIC,
     PUBLISHABLE,
     REPROCESSABLE,
@@ -27,8 +29,14 @@ from unitropico_api.domain.admin import (
     IngestionRequest,
     InvalidInput,
     NewCorrection,
+    NewOverride,
     NewVersion,
     NotFound,
+    OverrideCreate,
+    OverrideList,
+    OverrideResult,
+    PageOverrideView,
+    PageTextView,
     PayloadTooLarge,
     ProcessingEvent,
     ReprocessResult,
@@ -137,13 +145,65 @@ class DocumentRepository(Protocol):
         """Logically delete a correction (idempotent); NotFound if unknown."""
         ...
 
+    async def get_chunker_version(self, version_id: str) -> str | None:
+        """Return the chunker version of the last chunk step, if any."""
+        ...
+
+    async def list_overrides(self, version_id: str) -> list[PageOverrideView]:
+        """Return every page override (active and deleted) of a version."""
+        ...
+
+    async def create_override(self, new: NewOverride) -> PageOverrideView:
+        """Store an override, require a new review and log it (not if published).
+
+        Conflict ``override_exists`` when the page already has an active one.
+        """
+        ...
+
+    async def delete_override(
+        self, version_id: str, override_id: str
+    ) -> PageOverrideView:
+        """Logically delete an override (idempotent); NotFound if unknown."""
+        ...
+
 
 class BlobStore(Protocol):
-    """Object storage port (R2) for original PDFs."""
+    """Object storage port (R2): original PDFs and ingestion page text."""
 
     async def put_pdf(self, key: str, data: bytes, sha256: str) -> bool:
         """Store the PDF unless an object of the same size exists; True if written."""
         ...
+
+    async def get_json(self, key: str) -> object | None:
+        """Return the parsed JSON stored at ``key``, or None when absent."""
+        ...
+
+
+def pages_key(version_id: str, chunker_version: str) -> str:
+    """R2 key of the page text written by the ingestion chunk step."""
+    return f"pages/{version_id}/{chunker_version}.json"
+
+
+def _page_entry(document: object, version_id: str, chunker_version: str):
+    """Validate the pages JSON; return (page_count, {page_number: row}) or None."""
+    if not isinstance(document, dict):
+        return None
+    count = document.get("page_count")
+    pages = document.get("pages")
+    if (
+        document.get("version_id") != version_id
+        or document.get("chunker_version") != chunker_version
+        or type(count) is not int
+        or count < 1
+        or not isinstance(pages, list)
+    ):
+        return None
+    rows = {}
+    for row in pages:
+        if not isinstance(row, dict) or type(row.get("page_number")) is not int:
+            return None
+        rows[row["page_number"]] = row
+    return count, rows
 
 
 class IngestionLauncher(Protocol):
@@ -494,6 +554,116 @@ class AdminService:
             correction_id,
         )
         return await self._correction_result(documents, version_id, deleted)
+
+    async def page_text(self, version_id: str, page: int) -> PageTextView:
+        """Return the final prepared text of one page from the ingestion JSON."""
+        documents, blobs, _ = self._ports()
+        current = (await self._require(documents, version_id)).version
+        if current.page_count is not None and page > current.page_count:
+            raise InvalidInput(
+                "page_out_of_range", f"La versión tiene {current.page_count} páginas."
+            )
+        chunker_version = await documents.get_chunker_version(version_id)
+        if not chunker_version:
+            raise NotFound(*PAGE_TEXT_UNAVAILABLE)
+        document = await blobs.get_json(pages_key(version_id, chunker_version))
+        parsed = _page_entry(document, version_id, chunker_version)
+        if parsed is None:
+            if document is not None:
+                _log.warning("invalid pages json version=%s", version_id)
+            raise NotFound(*PAGE_TEXT_UNAVAILABLE)
+        page_count, rows = parsed
+        if page > page_count:
+            raise InvalidInput(
+                "page_out_of_range", f"La versión tiene {page_count} páginas."
+            )
+        row = rows.get(page)
+        if row is None:
+            raise NotFound(*PAGE_TEXT_UNAVAILABLE)
+        try:
+            return PageTextView(
+                version_id=version_id,
+                page_number=page,
+                page_count=page_count,
+                text=row.get("text"),
+                source=row.get("source"),
+                override_id=row.get("override_id"),
+                corrections_applied=row.get("corrections_applied"),
+                chunker_version=chunker_version,
+            )
+        except ValueError:  # pydantic ValidationError: malformed row
+            _log.warning("invalid pages json version=%s", version_id)
+            raise NotFound(*PAGE_TEXT_UNAVAILABLE) from None
+
+    async def list_overrides(self, version_id: str) -> OverrideList:
+        """Return active and deleted page overrides of a version."""
+        documents, _, _ = self._ports()
+        await self._require(documents, version_id)
+        overrides = await documents.list_overrides(version_id)
+        return OverrideList(version_id=version_id, overrides=overrides)
+
+    async def create_override(
+        self, version_id: str, body: OverrideCreate
+    ) -> OverrideResult:
+        """Record a full page override; it applies on the next reprocess only."""
+        documents, _, _ = self._ports()
+        current = (await self._require(documents, version_id)).version
+        self._ensure_editable(current.status)
+        if current.page_count is not None and body.page_number > current.page_count:
+            raise InvalidInput(
+                "page_out_of_range",
+                f"La versión tiene {current.page_count} páginas.",
+            )
+        # Fast path; the partial unique index re-checks it atomically.
+        if any(
+            o.active and o.page_number == body.page_number
+            for o in await documents.list_overrides(version_id)
+        ):
+            raise Conflict(*OVERRIDE_EXISTS)
+        created = await documents.create_override(
+            NewOverride(
+                id=f"pov_{uuid.uuid4().hex}",
+                version_id=version_id,
+                page_number=body.page_number,
+                text=body.text,
+                reason=body.reason,
+            )
+        )
+        _log.info(
+            "admin override created version=%s override=%s page=%s",
+            version_id,
+            created.id,
+            created.page_number,
+        )
+        return await self._override_result(documents, version_id, created)
+
+    async def delete_override(
+        self, version_id: str, override_id: str
+    ) -> OverrideResult:
+        """Logically delete an override; it stops applying on the next reprocess."""
+        documents, _, _ = self._ports()
+        current = (await self._require(documents, version_id)).version
+        self._ensure_editable(current.status)
+        deleted = await documents.delete_override(version_id, override_id)
+        _log.info(
+            "admin override deleted version=%s override=%s", version_id, override_id
+        )
+        return await self._override_result(documents, version_id, deleted)
+
+    async def _override_result(
+        self,
+        documents: DocumentRepository,
+        version_id: str,
+        override: PageOverrideView,
+    ) -> OverrideResult:
+        """Attach the version state left by the change (review is required)."""
+        version = (await self._require(documents, version_id)).version
+        return OverrideResult(
+            override=override,
+            version_status=version.status,
+            requires_review=version.requires_review,
+            corrections_dirty=version.corrections_dirty,
+        )
 
     async def _correction_result(
         self,

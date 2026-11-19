@@ -24,6 +24,11 @@ from unitropico_api.domain.admin import (
     DocumentList,
     InvalidInput,
     NotFound,
+    OverrideCreate,
+    OverrideList,
+    OverrideResult,
+    PagesQuery,
+    PageTextView,
     PayloadTooLarge,
     ReprocessResult,
     StorageUnavailable,
@@ -50,6 +55,7 @@ STATUS_BY_ERROR: dict[type[AdminError], int] = {
 }
 VersionId = Annotated[str, Path(min_length=1, max_length=64)]
 CorrectionId = Annotated[str, Path(min_length=1, max_length=64)]
+OverrideId = Annotated[str, Path(min_length=1, max_length=64)]
 _bearer = HTTPBearer(auto_error=False)
 
 
@@ -298,5 +304,50 @@ def create_admin_router(service: AdminService, token: str | None) -> APIRouter:
     ) -> CorrectionResult:
         """Logically delete a correction (kept for traceability)."""
         return await service.delete_correction(version_id, correction_id)
+
+    @router.get("/versions/{version_id}/pages", response_model=PageTextView)
+    async def page_text(
+        version_id: VersionId, query: Annotated[PagesQuery, Query()]
+    ) -> PageTextView:
+        """Final prepared text of one page, as the last chunk step produced it."""
+        return await service.page_text(version_id, query.page)
+
+    @router.get("/versions/{version_id}/page-overrides", response_model=OverrideList)
+    async def list_overrides(version_id: VersionId) -> OverrideList:
+        """List active and deleted page overrides."""
+        return await service.list_overrides(version_id)
+
+    @router.post(
+        "/versions/{version_id}/page-overrides",
+        status_code=201,
+        response_model=OverrideResult,
+        openapi_extra={
+            "requestBody": {
+                "required": True,
+                "content": {
+                    "application/json": {"schema": OverrideCreate.model_json_schema()}
+                },
+            }
+        },
+    )
+    async def create_override(
+        request: Request, version_id: VersionId
+    ) -> OverrideResult:
+        """Record a full page override; the JSON body is parsed after auth."""
+        try:
+            body = OverrideCreate.model_validate_json(await request.body())
+        except ValidationError as error:
+            raise _invalid(error) from None
+        return await service.create_override(version_id, body)
+
+    @router.delete(
+        "/versions/{version_id}/page-overrides/{override_id}",
+        response_model=OverrideResult,
+    )
+    async def delete_override(
+        version_id: VersionId, override_id: OverrideId
+    ) -> OverrideResult:
+        """Logically delete a page override (kept for traceability)."""
+        return await service.delete_override(version_id, override_id)
 
     return router

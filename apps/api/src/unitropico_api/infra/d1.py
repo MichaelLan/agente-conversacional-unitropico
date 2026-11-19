@@ -6,6 +6,7 @@ from unitropico_api.core.logger import get_logger
 from unitropico_api.domain.admin import (
     CORRECTIONS_PENDING,
     DUPLICATE_CORRECTION,
+    OVERRIDE_EXISTS,
     REPROCESSABLE,
     TOO_MANY_CORRECTIONS,
     AdminError,
@@ -16,8 +17,10 @@ from unitropico_api.domain.admin import (
     DocumentWithVersions,
     InvalidInput,
     NewCorrection,
+    NewOverride,
     NewVersion,
     NotFound,
+    PageOverrideView,
     ProcessingEvent,
     StorageUnavailable,
     TextCorrectionView,
@@ -102,6 +105,8 @@ TRIGGER_CONFLICTS = {
     "published_version_immutable": "La versión publicada no puede modificarse.",
     "correction_page_out_of_range": "La página supera el número de páginas.",
     "text_correction_immutable": "Las correcciones no pueden editarse.",
+    "override_page_out_of_range": "La página supera el número de páginas.",
+    "page_override_immutable": "Las sustituciones de página no pueden editarse.",
     "corrections_pending": (
         "Hay correcciones sin aplicar: reprocese la versión antes de publicarla."
     ),
@@ -163,6 +168,48 @@ REQUIRE_REVIEW_FOR_CORRECTION = (
     "(SELECT 1 FROM text_corrections WHERE id = ?2 AND version_id = ?1 "
     "AND deleted_at IS NULL))"
 )
+# Same statements as infra/d1/queries.sql (overrides_by_version,
+# insert_override, soft_delete_override); a test keeps them identical.
+OVERRIDES = (
+    "SELECT id, version_id, page_number, text, reason, created_at, deleted_at "
+    "FROM page_overrides WHERE version_id = ?1 ORDER BY created_at, rowid"
+)
+OVERRIDE_BY_ID = (
+    "SELECT id, version_id, page_number, text, reason, created_at, deleted_at "
+    "FROM page_overrides WHERE version_id = ?1 AND id = ?2"
+)
+INSERT_OVERRIDE = (
+    "INSERT INTO page_overrides (id, version_id, page_number, text, reason) "
+    "VALUES (?1, ?2, ?3, ?4, ?5) RETURNING id"
+)
+SOFT_DELETE_OVERRIDE = (
+    "UPDATE page_overrides SET deleted_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') "
+    "WHERE id = ?1 AND version_id = ?2 AND deleted_at IS NULL RETURNING id"
+)
+# The INSERT runs first in the batch: if it fails nothing else is written.
+LOG_OVERRIDE_CREATED = (
+    "INSERT INTO processing_events (version_id, step, status, detail) "
+    "VALUES (?2, 'correct', 'succeeded', "
+    "'override_created id=' || ?1 || ' page=' || ?3)"
+)
+# Logs the deletion only while the override is still active; it runs before
+# SOFT_DELETE_OVERRIDE in the same batch.
+LOG_OVERRIDE_DELETED_IF_ACTIVE = (
+    "INSERT INTO processing_events (version_id, step, status, detail) "
+    "SELECT ?2, 'correct', 'succeeded', 'override_deleted id=' || ?1 "
+    "WHERE EXISTS (SELECT 1 FROM page_overrides "
+    "WHERE id = ?1 AND version_id = ?2 AND deleted_at IS NULL)"
+)
+# Same review invalidation as REQUIRE_REVIEW_FOR_CORRECTION, keyed on an
+# override that must still be active (deletion) or was just inserted (creation).
+REQUIRE_REVIEW_FOR_OVERRIDE = (
+    "UPDATE document_versions SET requires_review = 1, "
+    "status = CASE WHEN status IN ('ready', 'unpublished') "
+    "THEN 'review_required' ELSE status END "
+    "WHERE id = ?1 AND status <> 'published' AND EXISTS "
+    "(SELECT 1 FROM page_overrides WHERE id = ?2 AND version_id = ?1 "
+    "AND deleted_at IS NULL)"
+)
 VERSION_PUBLISHED = (
     "version_published",
     "La versión está publicada: despublíquela antes de corregir su texto.",
@@ -203,6 +250,8 @@ def translate_error(
     if "UNIQUE constraint failed" in message:
         if "text_corrections." in message:
             return Conflict(*DUPLICATE_CORRECTION)
+        if "page_overrides." in message:
+            return Conflict(*OVERRIDE_EXISTS)
         for column, (code, text) in UNIQUE_CONFLICTS.items():
             if column in message:
                 return Conflict(code, text)
@@ -226,11 +275,16 @@ def _correction_error(error: AdminError) -> AdminError:
     """Translate schema guards of text_corrections to the admin contract."""
     if error.code == "published_version_immutable":
         return Conflict(*VERSION_PUBLISHED)
-    if error.code == "correction_page_out_of_range":
+    if error.code in ("correction_page_out_of_range", "override_page_out_of_range"):
         return InvalidInput(
             "page_out_of_range", "La página supera el número de páginas del documento."
         )
     return error
+
+
+def _override(row: Mapping[str, Any]) -> PageOverrideView:
+    """Build a PageOverrideView from an OVERRIDES row."""
+    return PageOverrideView(**row, active=row["deleted_at"] is None)
 
 
 def _view(row: Mapping[str, Any]) -> VersionView:
@@ -648,6 +702,78 @@ class D1DocumentRepository:
         current = await self.get_correction(version_id, correction_id)
         if current is None:
             raise NotFound("correction_not_found", "La corrección no existe.")
+        return current
+
+    async def get_chunker_version(self, version_id: str) -> str | None:
+        """Return the chunker version recorded by the last chunk step."""
+        rows = await self._all(
+            "SELECT chunker_version FROM document_versions WHERE id = ?1", version_id
+        )
+        return rows[0]["chunker_version"] if rows else None
+
+    async def list_overrides(self, version_id: str) -> list[PageOverrideView]:
+        """Return every page override of a version, oldest first."""
+        rows = await self._all(OVERRIDES, version_id)
+        return [_override(row) for row in rows]
+
+    async def get_override(
+        self, version_id: str, override_id: str
+    ) -> PageOverrideView | None:
+        """Return one override of the version, or None."""
+        rows = await self._all(OVERRIDE_BY_ID, version_id, override_id)
+        return _override(rows[0]) if rows else None
+
+    async def create_override(self, new: NewOverride) -> PageOverrideView:
+        """Store an override, invalidate the review and log it atomically.
+
+        A second active override for the page violates the partial unique index
+        (409 ``override_exists``) and rolls the whole batch back; the schema
+        triggers mark the version ``corrections_dirty`` in the same transaction.
+        """
+        try:
+            await self._batch(
+                [
+                    self._stmt(
+                        INSERT_OVERRIDE,
+                        new.id,
+                        new.version_id,
+                        new.page_number,
+                        new.text,
+                        new.reason,
+                    ),
+                    self._stmt(REQUIRE_REVIEW_FOR_OVERRIDE, new.version_id, new.id),
+                    self._stmt(
+                        LOG_OVERRIDE_CREATED, new.id, new.version_id, new.page_number
+                    ),
+                ],
+                check_code="invalid_override",
+            )
+        except AdminError as error:
+            raise _correction_error(error) from None
+        created = await self.get_override(new.version_id, new.id)
+        if created is None:
+            raise StorageUnavailable(
+                "storage_unavailable", "No se pudo registrar la sustitución."
+            )
+        return created
+
+    async def delete_override(
+        self, version_id: str, override_id: str
+    ) -> PageOverrideView:
+        """Logically delete an override (idempotent) and log it once."""
+        try:
+            await self._batch(
+                [
+                    self._stmt(LOG_OVERRIDE_DELETED_IF_ACTIVE, override_id, version_id),
+                    self._stmt(REQUIRE_REVIEW_FOR_OVERRIDE, version_id, override_id),
+                    self._stmt(SOFT_DELETE_OVERRIDE, override_id, version_id),
+                ]
+            )
+        except AdminError as error:
+            raise _correction_error(error) from None
+        current = await self.get_override(version_id, override_id)
+        if current is None:
+            raise NotFound("override_not_found", "La sustitución no existe.")
         return current
 
     async def _after_guarded_update(
