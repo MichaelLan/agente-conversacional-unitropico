@@ -107,6 +107,20 @@ test('invalid contract, network and JSON failures are sanitized in Spanish', asy
     { kind: 'invalid_response', message: generic })
 })
 
+test('429 rate_limited shows the server message (bounded) and is an HttpError', async () => {
+  const serverMessage = 'Has realizado muchas consultas seguidas. Espera un momento e inténtalo de nuevo.'
+  const limited = { error: { code: 'rate_limited', message: serverMessage } }
+  await assert.rejects(sendChat(request, { fetcher: reply(429, limited) }),
+    error => error instanceof HttpError && error.kind === 'rate_limited' && error.message === serverMessage)
+  const custom = { error: { code: 'rate_limited', message: '  Espera 1 minuto.  ' } }
+  await assert.rejects(sendChat(request, { fetcher: reply(429, custom) }), { kind: 'rate_limited', message: 'Espera 1 minuto.' })
+  // Cuerpo inesperado, código distinto o mensaje desmesurado: texto fijo.
+  for (const body of [{}, { detail: 'x' }, { error: { code: 'other', message: 'Traceback secret' } },
+    { error: { code: 'rate_limited', message: 'x'.repeat(301) } }, { error: { code: 'rate_limited', message: ' ' } }]) {
+    await assert.rejects(sendChat(request, { fetcher: reply(429, body) }), { kind: 'rate_limited', message: serverMessage })
+  }
+})
+
 const hangUntilAbort = (_url, init) => new Promise((_, reject) => {
   init.signal.addEventListener('abort', () => reject(init.signal.reason))
 })

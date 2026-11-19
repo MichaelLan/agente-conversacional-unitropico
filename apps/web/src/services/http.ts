@@ -1,20 +1,24 @@
 /** Transporte HTTP mínimo sobre fetch nativo: JSON, timeout y errores saneados. */
 
-export type HttpFailure = 'network' | 'timeout' | 'invalid_response' | 'invalid_request'
+export type HttpFailure = 'network' | 'timeout' | 'invalid_response' | 'invalid_request' | 'rate_limited'
 
 export const HTTP_MESSAGES: Readonly<Record<HttpFailure, string>> = {
   network: 'No se pudo conectar con el asistente. Revisa tu conexión e inténtalo de nuevo.',
   timeout: 'El asistente tardó demasiado en responder. Inténtalo de nuevo.',
   invalid_response: 'No se pudo completar la consulta. Inténtalo de nuevo.',
   invalid_request: 'Escribe una pregunta de 1 a 500 caracteres.',
+  rate_limited: 'Has realizado muchas consultas seguidas. Espera un momento e inténtalo de nuevo.',
 }
 
-/** Error con mensaje en español apto para mostrar; nunca expone detalles internos. */
+/**
+ * Error con mensaje en español apto para mostrar; nunca expone detalles internos.
+ * `message` solo se sustituye por textos de usuario ya validados (p. ej. el 429).
+ */
 export class HttpError extends Error {
   readonly kind: HttpFailure
 
-  constructor(kind: HttpFailure) {
-    super(HTTP_MESSAGES[kind])
+  constructor(kind: HttpFailure, message: string = HTTP_MESSAGES[kind]) {
+    super(message)
     this.name = 'HttpError'
     this.kind = kind
   }
@@ -51,7 +55,7 @@ export interface JsonResponse {
 export const DEFAULT_TIMEOUT_MS = 60_000
 
 export interface SendOptions extends RequestOptions {
-  method?: 'GET' | 'POST' | 'PATCH' | undefined
+  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE' | undefined
   headers?: Record<string, string> | undefined
   /** Cuerpo ya serializado (JSON como texto, o binario). */
   body?: BodyInit | undefined

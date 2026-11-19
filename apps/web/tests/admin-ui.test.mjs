@@ -8,7 +8,8 @@ import { listTs, srcRoot, webRoot } from './support/load.mjs'
 const read = path => readFile(path, 'utf8')
 const adminSfcs = ['AdminApp.vue', 'components/AdminPanel.vue', 'components/LoginPanel.vue', 'components/DocumentsTable.vue',
   'components/UploadModal.vue', 'components/ConfirmActionModal.vue', 'components/VersionDetailSlideover.vue',
-  'components/MetadataForm.vue', 'components/StatusBadge.vue']
+  'components/MetadataForm.vue', 'components/StatusBadge.vue', 'components/ChunksList.vue',
+  'components/CorrectionsPanel.vue', 'components/VersionReviewPanel.vue']
 
 test('new admin SFCs compile', async () => {
   for (const name of adminSfcs) {

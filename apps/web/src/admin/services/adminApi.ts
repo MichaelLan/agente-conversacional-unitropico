@@ -1,5 +1,11 @@
 import {
   VERSION_STATUSES,
+  type Chunk,
+  type ChunkPage,
+  type Correction,
+  type CorrectionInput,
+  type CorrectionList,
+  type CorrectionResult,
   type DocumentList,
   type DocumentSummary,
   type DocumentWithVersions,
@@ -93,6 +99,35 @@ export function isReprocessResult(value: unknown): value is ReprocessResult {
   return isVersionView(value) && isRecord(value) && isIngestion(value.ingestion)
 }
 
+export function isChunk(value: unknown): value is Chunk {
+  return isRecord(value) && isInt(value.ordinal) && isStr(value.id) && isNullableStr(value.section)
+    && isInt(value.page_start) && isInt(value.page_end) && isStr(value.text)
+    && isNullableStr(value.chunker_version)
+}
+
+export function isChunkPage(value: unknown): value is ChunkPage {
+  return isRecord(value) && isStr(value.version_id) && isStatus(value.status)
+    && isInt(value.total) && isInt(value.offset) && isInt(value.limit)
+    && Array.isArray(value.chunks) && value.chunks.every(isChunk)
+}
+
+export function isCorrection(value: unknown): value is Correction {
+  return isRecord(value) && isStr(value.id) && isStr(value.version_id) && isInt(value.page_number)
+    && isStr(value.find_text) && isStr(value.replace_text) && isStr(value.reason)
+    && isStr(value.created_at) && isNullableStr(value.deleted_at) && typeof value.active === 'boolean'
+}
+
+export function isCorrectionList(value: unknown): value is CorrectionList {
+  return isRecord(value) && isStr(value.version_id)
+    && Array.isArray(value.corrections) && value.corrections.every(isCorrection)
+}
+
+export function isCorrectionResult(value: unknown): value is CorrectionResult {
+  return isRecord(value) && isCorrection(value.correction) && isStatus(value.version_status)
+    && typeof value.requires_review === 'boolean' && typeof value.reprocess_required === 'boolean'
+    && isStr(value.message)
+}
+
 export type AdminErrorKind = 'unauthorized' | 'disabled' | 'server' | 'network' | 'timeout' | 'invalid_response'
 
 /** Error de la API admin: `message` es apto para mostrarse (del servidor o fijo). */
@@ -147,6 +182,10 @@ export interface AdminApi {
   publish(id: string): Promise<VersionView>
   unpublish(id: string): Promise<VersionView>
   reprocess(id: string): Promise<ReprocessResult>
+  listChunks(id: string, offset: number, limit: number): Promise<ChunkPage>
+  listCorrections(id: string): Promise<CorrectionList>
+  createCorrection(id: string, input: CorrectionInput): Promise<CorrectionResult>
+  deleteCorrection(id: string, correctionId: string): Promise<CorrectionResult>
 }
 
 /** Construye la URL de subida con los metadatos en query (sin token). */
@@ -164,7 +203,7 @@ export function createAdminApi({ getToken, fetcher, signal }: AdminApiOptions): 
   async function call<T>(
     path: string,
     init: {
-      method?: 'GET' | 'POST' | 'PATCH'
+      method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'
       headers?: Record<string, string>
       body?: BodyInit
       timeoutMs?: number
@@ -220,5 +259,18 @@ export function createAdminApi({ getToken, fetcher, signal }: AdminApiOptions): 
     publish: id => call(versionPath(id, '/publish'), { method: 'POST' }, isVersionView),
     unpublish: id => call(versionPath(id, '/unpublish'), { method: 'POST' }, isVersionView),
     reprocess: id => call(versionPath(id, '/reprocess'), { method: 'POST' }, isReprocessResult),
+    listChunks: (id, offset, limit) => call(
+      versionPath(id, `/chunks?${new URLSearchParams({ offset: String(offset), limit: String(limit) }).toString()}`),
+      {}, isChunkPage),
+    listCorrections: id => call(versionPath(id, '/corrections'), {}, isCorrectionList),
+    createCorrection: (id, input) => call(versionPath(id, '/corrections'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+      ok: [201],
+    }, isCorrectionResult),
+    deleteCorrection: (id, correctionId) => call(
+      versionPath(id, `/corrections/${encodeURIComponent(correctionId)}`),
+      { method: 'DELETE' }, isCorrectionResult),
   }
 }

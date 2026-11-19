@@ -123,3 +123,57 @@ export interface ActionResult {
   ok: boolean
   message: string
 }
+
+/** Fragmento de texto extraído (GET /admin/versions/{id}/chunks). */
+export interface Chunk {
+  ordinal: number
+  id: string
+  section: string | null
+  page_start: number
+  page_end: number
+  text: string
+  chunker_version: string | null
+}
+
+export interface ChunkPage {
+  version_id: string
+  status: VersionStatus
+  total: number
+  offset: number
+  limit: number
+  chunks: Chunk[]
+}
+
+export interface Correction {
+  id: string
+  version_id: string
+  page_number: number
+  find_text: string
+  replace_text: string
+  reason: string
+  created_at: string
+  deleted_at: string | null
+  active: boolean
+}
+
+export interface CorrectionList {
+  version_id: string
+  corrections: Correction[]
+}
+
+/** Cuerpo de POST /admin/versions/{id}/corrections. */
+export interface CorrectionInput {
+  page_number: number
+  find_text: string
+  replace_text: string
+  reason: string
+}
+
+/** Respuesta de crear/borrar una corrección. */
+export interface CorrectionResult {
+  correction: Correction
+  version_status: VersionStatus
+  requires_review: boolean
+  reprocess_required: boolean
+  message: string
+}

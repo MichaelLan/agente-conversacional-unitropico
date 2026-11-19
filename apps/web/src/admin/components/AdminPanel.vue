@@ -232,9 +232,12 @@ const detailBusy = computed(() => docs.detail.value !== null && docs.busy.value[
       :saving="saving"
       :save-error="saveError"
       :busy="detailBusy"
+      :api="docs.client"
+      :describe="docs.describe"
       @update:open="onDetailOpen"
       @save="save"
       @action="detailAction"
+      @changed="docs.refreshDetail($event)"
     />
   </div>
 </template>

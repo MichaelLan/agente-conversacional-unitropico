@@ -11,7 +11,7 @@ import {
   countChars,
   normalizeQuestion,
 } from '../lib/chat-state'
-import { HttpError, postJson, type RequestOptions } from './http'
+import { HTTP_MESSAGES, HttpError, postJson, type RequestOptions } from './http'
 
 export const CHAT_ENDPOINT = '/api/chat'
 
@@ -86,6 +86,21 @@ export function parseChatResponse(status: number, body: unknown): ChatResult | n
   return null
 }
 
+/** Longitud máxima del mensaje del servidor que se muestra en un 429. */
+export const RATE_LIMIT_MESSAGE_MAX_CHARS = 300
+
+/**
+ * 429 de la API (`{"error":{"code":"rate_limited","message":...}}`): usa el
+ * mensaje del servidor si es texto razonable; si no, el texto fijo.
+ */
+export function rateLimitMessage(body: unknown): string {
+  const error = isRecord(body) ? body.error : undefined
+  const message = isRecord(error) && error.code === 'rate_limited' ? error.message : undefined
+  return nonblank(message) && countChars(message.trim()) <= RATE_LIMIT_MESSAGE_MAX_CHARS
+    ? message.trim()
+    : HTTP_MESSAGES.rate_limited
+}
+
 function isValidRequest(request: ChatRequest): boolean {
   return normalizeQuestion(request.question) === request.question
     && request.history.length <= HISTORY_MAX_MESSAGES
@@ -96,11 +111,13 @@ function isValidRequest(request: ChatRequest): boolean {
 
 /**
  * POST /api/chat. Resuelve con `answered`, `abstained` o `unavailable`;
- * lanza `HttpError` (mensaje saneado) o `RequestAbortedError`.
+ * lanza `HttpError` (mensaje saneado; `rate_limited` en 429, reintentable) o
+ * `RequestAbortedError`.
  */
 export async function sendChat(request: ChatRequest, options: RequestOptions = {}): Promise<ChatResult> {
   if (!isValidRequest(request)) throw new HttpError('invalid_request')
   const { status, body } = await postJson(CHAT_ENDPOINT, request, options)
+  if (status === 429) throw new HttpError('rate_limited', rateLimitMessage(body))
   const result = parseChatResponse(status, body)
   if (result === null) throw new HttpError('invalid_response')
   return result

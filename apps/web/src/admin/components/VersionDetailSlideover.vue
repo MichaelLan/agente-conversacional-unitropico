@@ -5,10 +5,13 @@ import UAlert from '@nuxt/ui/components/Alert.vue'
 import UButton from '@nuxt/ui/components/Button.vue'
 import USkeleton from '@nuxt/ui/components/Skeleton.vue'
 import MetadataForm from './MetadataForm.vue'
+import VersionReviewPanel from './VersionReviewPanel.vue'
 import StatusBadge from './StatusBadge.vue'
 import {
   ACTION_LABELS, allowedActions, documentTypeLabel, formatBytes, formatTimestamp, formatValidity,
 } from '../lib/versions'
+import { eventDetailText, explainCorrectionError, stepLabel } from '../lib/corrections'
+import type { AdminApi } from '../services/adminApi'
 import type { VersionAction, VersionDetail, VersionPatch, VersionRow } from '../types'
 
 const props = defineProps<{
@@ -19,18 +22,33 @@ const props = defineProps<{
   saving: boolean
   saveError: string | null
   busy: boolean
+  api: AdminApi
+  describe: (error: unknown, fallback: string) => string
 }>()
 const open = defineModel<boolean>('open', { required: true })
-const emit = defineEmits<{ save: [patch: VersionPatch]; action: [action: VersionAction] }>()
+const emit = defineEmits<{ save: [patch: VersionPatch]; action: [action: VersionAction]; changed: [id: string] }>()
+
+type Tab = 'summary' | 'text' | 'corrections'
+const TABS: readonly [Tab, string][] = [['summary', 'Resumen'], ['text', 'Texto extraído'], ['corrections', 'Correcciones']]
+const tab = ref<Tab>('summary')
+watch(() => props.detail?.version.id, () => { tab.value = 'summary' })
+const reviewSection = (): 'text' | 'corrections' => (tab.value === 'text' ? 'text' : 'corrections')
 
 const editing = ref(false)
 watch(open, isOpen => {
-  if (!isOpen) editing.value = false
+  if (!isOpen) {
+    editing.value = false
+    tab.value = 'summary'
+  }
 })
 // Tras guardar con éxito el padre limpia el error; cerramos el formulario.
 watch(() => props.saving, (now, before) => {
   if (before && !now && props.saveError === null) editing.value = false
 })
+
+const reviewVisited = ref(false)
+watch(tab, value => { if (value !== 'summary') reviewVisited.value = true })
+watch(() => props.detail?.version.id, () => { reviewVisited.value = false })
 
 const row = (): VersionRow | null => props.detail
   ? { document: props.detail.document, version: props.detail.version }
@@ -119,116 +137,158 @@ function rows(): [string, string][] {
             />
           </div>
 
-          <UAlert
-            v-if="detail.version.error_code || detail.error_detail"
-            color="error"
-            variant="subtle"
-            icon="i-lucide-circle-alert"
-            :title="detail.version.error_code ? `Error: ${detail.version.error_code}` : 'Error de procesamiento'"
+          <div
+            class="flex flex-wrap gap-1"
+            role="group"
+            aria-label="Secciones del detalle"
           >
-            <template
-              v-if="detail.error_detail"
-              #description
-            >
-              <p class="whitespace-pre-line break-words">
-                {{ detail.error_detail }}
-              </p>
-            </template>
-          </UAlert>
+            <UButton
+              v-for="[id, label] in TABS"
+              :key="id"
+              size="sm"
+              color="neutral"
+              :variant="tab === id ? 'solid' : 'ghost'"
+              :label="label"
+              :aria-pressed="tab === id"
+              @click="tab = id"
+            />
+          </div>
 
-          <dl class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm">
-            <template
-              v-for="[label, value] in rows()"
-              :key="label"
-            >
-              <dt class="text-muted">
-                {{ label }}
-              </dt>
-              <dd class="break-words text-default">
-                {{ value }}
-              </dd>
-            </template>
-          </dl>
+          <VersionReviewPanel
+            v-if="tab !== 'summary' || reviewVisited"
+            v-show="tab !== 'summary'"
+            :api="api"
+            :describe="describe"
+            :detail="detail"
+            :section="reviewSection()"
+            :busy="busy"
+            :reprocessable="allowedActions(detail.version).includes('reprocess')"
+            @changed="emit('changed', detail.version.id)"
+            @reprocess="emit('action', 'reprocess')"
+            @section="tab = $event"
+          />
 
-          <section aria-labelledby="workflow-title">
-            <h3
-              id="workflow-title"
-              class="mb-2 text-sm font-semibold text-highlighted"
+          <div
+            v-show="tab === 'summary'"
+            class="space-y-6"
+          >
+            <UAlert
+              v-if="detail.version.error_code || detail.error_detail"
+              color="error"
+              variant="subtle"
+              icon="i-lucide-circle-alert"
+              :title="detail.version.error_code ? `Error: ${detail.version.error_code}` : 'Error de procesamiento'"
             >
-              Instancia de Workflow
-            </h3>
-            <p
-              v-if="detail.workflow === null"
-              class="text-sm text-muted"
-            >
-              Sin instancia registrada.
-            </p>
-            <dl
-              v-else
-              class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1 text-sm"
-            >
-              <dt class="text-muted">
-                Instancia
-              </dt>
-              <dd class="break-all">
-                {{ detail.workflow.instance_id }}
-              </dd>
-              <dt class="text-muted">
-                Estado
-              </dt>
-              <dd>{{ detail.workflow.status }}</dd>
-              <template v-if="detail.workflow.error_name || detail.workflow.error_message">
+              <template #description>
+                <p
+                  v-if="explainCorrectionError(detail.version.error_code, detail.error_detail)"
+                  class="break-words"
+                >
+                  {{ explainCorrectionError(detail.version.error_code, detail.error_detail) }}
+                </p>
+                <p
+                  v-if="detail.error_detail"
+                  class="whitespace-pre-line break-words"
+                >
+                  {{ detail.error_detail }}
+                </p>
+              </template>
+            </UAlert>
+
+            <dl class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm">
+              <template
+                v-for="[label, value] in rows()"
+                :key="label"
+              >
                 <dt class="text-muted">
-                  Error
+                  {{ label }}
                 </dt>
-                <dd class="break-words text-error">
-                  {{ [detail.workflow.error_name, detail.workflow.error_message].filter(Boolean).join(': ') }}
+                <dd class="break-words text-default">
+                  {{ value }}
                 </dd>
               </template>
             </dl>
-          </section>
 
-          <section aria-labelledby="events-title">
-            <h3
-              id="events-title"
-              class="mb-2 text-sm font-semibold text-highlighted"
-            >
-              Eventos de procesamiento
-            </h3>
-            <p
-              v-if="detail.processing_events.length === 0"
-              class="text-sm text-muted"
-            >
-              Aún no hay eventos.
-            </p>
-            <ol
-              v-else
-              class="space-y-2 border-s border-default ps-4"
-            >
-              <li
-                v-for="event in detail.processing_events"
-                :key="event.id"
-                class="text-sm"
+            <section aria-labelledby="workflow-title">
+              <h3
+                id="workflow-title"
+                class="mb-2 text-sm font-semibold text-highlighted"
               >
-                <p class="text-xs text-muted">
-                  {{ formatTimestamp(event.created_at) }}
-                </p>
-                <p class="text-default">
-                  <span class="font-medium">{{ event.step }}</span> · {{ event.status }}
-                  <span
-                    v-if="event.error_code"
-                    class="text-error"
-                  > · {{ event.error_code }}</span>
-                </p>
-                <p
-                  v-if="event.detail"
-                  class="whitespace-pre-line break-words text-muted"
+                Instancia de Workflow
+              </h3>
+              <p
+                v-if="detail.workflow === null"
+                class="text-sm text-muted"
+              >
+                Sin instancia registrada.
+              </p>
+              <dl
+                v-else
+                class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1 text-sm"
+              >
+                <dt class="text-muted">
+                  Instancia
+                </dt>
+                <dd class="break-all">
+                  {{ detail.workflow.instance_id }}
+                </dd>
+                <dt class="text-muted">
+                  Estado
+                </dt>
+                <dd>{{ detail.workflow.status }}</dd>
+                <template v-if="detail.workflow.error_name || detail.workflow.error_message">
+                  <dt class="text-muted">
+                    Error
+                  </dt>
+                  <dd class="break-words text-error">
+                    {{ [detail.workflow.error_name, detail.workflow.error_message].filter(Boolean).join(': ') }}
+                  </dd>
+                </template>
+              </dl>
+            </section>
+
+            <section aria-labelledby="events-title">
+              <h3
+                id="events-title"
+                class="mb-2 text-sm font-semibold text-highlighted"
+              >
+                Eventos de procesamiento
+              </h3>
+              <p
+                v-if="detail.processing_events.length === 0"
+                class="text-sm text-muted"
+              >
+                Aún no hay eventos.
+              </p>
+              <ol
+                v-else
+                class="space-y-2 border-s border-default ps-4"
+              >
+                <li
+                  v-for="event in detail.processing_events"
+                  :key="event.id"
+                  class="text-sm"
                 >
-                  {{ event.detail }}
-                </p>
-              </li>
-            </ol>
-          </section>
+                  <p class="text-xs text-muted">
+                    {{ formatTimestamp(event.created_at) }}
+                  </p>
+                  <p class="text-default">
+                    <span class="font-medium">{{ stepLabel(event.step) }}</span> · {{ event.status }}
+                    <span
+                      v-if="event.error_code"
+                      class="text-error"
+                    > · {{ event.error_code }}</span>
+                  </p>
+                  <p
+                    v-if="eventDetailText(event)"
+                    class="whitespace-pre-line break-words text-muted"
+                  >
+                    {{ eventDetailText(event) }}
+                  </p>
+                </li>
+              </ol>
+            </section>
+          </div>
         </div>
       </template>
     </template>

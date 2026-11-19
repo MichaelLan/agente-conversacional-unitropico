@@ -150,6 +150,12 @@ export function useAdminDocuments({ session, api, refreshMs = AUTO_REFRESH_MS }:
     }
   }
 
+  /** Refresca listado y detalle abierto tras cambios hechos fuera de `guarded` (correcciones). */
+  async function refreshDetail(id: string): Promise<void> {
+    await load(true)
+    if (detail.value?.version.id === id) await openDetail(id, true)
+  }
+
   function closeDetail(): void {
     detail.value = null
     detailError.value = null
@@ -169,7 +175,7 @@ export function useAdminDocuments({ session, api, refreshMs = AUTO_REFRESH_MS }:
   return {
     rows, documents, loaded, loading, loadError, busy, uploading, announcement, autoRefreshing,
     detail, detailLoading, detailError,
-    load, act, update, upload, openDetail, closeDetail,
+    client, describe, load, act, update, upload, openDetail, closeDetail, refreshDetail,
   }
 }
 

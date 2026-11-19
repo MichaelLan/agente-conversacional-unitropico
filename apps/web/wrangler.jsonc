@@ -1,0 +1,21 @@
+{
+  // Web pública (chat `/` y panel `/admin/`) + proxy same-origin `/api/*` -> API.
+  // Ver apps/web/README.md (sección «Despliegue»). Requiere `pnpm build` antes.
+  "name": "unitropico-web",
+  "main": "worker/index.js",
+  "compatibility_date": "2026-11-08",
+  // Acceso público por workers.dev hasta que haya dominio propio (routes).
+  "workers_dev": true,
+  "preview_urls": false,
+  "assets": {
+    "directory": "./dist",
+    // Solo /api/* ejecuta el Worker antes que los assets; el resto lo sirven los
+    // assets (con public/_headers). Sin asset coincidente el Worker responde 404.
+    "run_worker_first": ["/api/*"],
+    "not_found_handling": "none",
+    "html_handling": "auto-trailing-slash"
+  },
+  // Debe coincidir con el `name` del Worker de la API (apps/api/wrangler.jsonc).
+  // La API no tiene workers_dev ni routes: solo es alcanzable por este binding.
+  "services": [{ "binding": "API", "service": "unitropico-api" }]
+}

@@ -63,6 +63,18 @@ test('network error → error status, then retry resends the same question', asy
   assert.equal(await chat.retry(), false)
 })
 
+test('429 rate limited shows the server message and allows retry', async () => {
+  const server = fakeServer(new HttpError('rate_limited', 'Espera un momento.'), answered('ok'))
+  const chat = useChat({ request: server.request })
+  await chat.send('becas')
+  assert.equal(chat.status.value, 'error')
+  const failure = chat.messages.value.at(-1)
+  assert.deepEqual([failure.kind, failure.text], ['error', 'Espera un momento.'])
+  assert.equal(chat.retryableId.value, failure.id)
+  assert.equal(await chat.retry(), true)
+  assert.deepEqual(chat.messages.value.map(m => m.kind ?? m.role), ['user', 'answer'])
+})
+
 test('503 unavailable is retryable and unknown errors are sanitized', async () => {
   const server = fakeServer({ status: 'unavailable', referral: 'Servicio caído.' }, new Error('stack trace secreto'))
   const chat = useChat({ request: server.request })

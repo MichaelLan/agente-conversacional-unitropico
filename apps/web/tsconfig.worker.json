@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "WebWorker"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "allowJs": true,
+    "checkJs": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "composite": true,
+    "outDir": "node_modules/.tmp/out-worker",
+    "emitDeclarationOnly": true,
+    "tsBuildInfoFile": "node_modules/.tmp/tsconfig.worker.tsbuildinfo",
+    "types": []
+  },
+  "include": ["worker/**/*.js"]
+}
