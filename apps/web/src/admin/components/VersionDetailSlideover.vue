@@ -10,7 +10,7 @@ import MetadataForm from './MetadataForm.vue'
 import VersionReviewPanel from './VersionReviewPanel.vue'
 import StatusBadge from './StatusBadge.vue'
 import {
-  ACTION_LABELS, allowedActions, documentTypeLabel, formatBytes, formatTimestamp, formatValidity,
+  ACTION_LABELS, CORRECTIONS_PENDING_NOTICE, actionBlockReason, allowedActions, hasPendingCorrections, documentTypeLabel, formatBytes, formatTimestamp, formatValidity,
 } from '../lib/versions'
 import { eventDetailText, explainCorrectionError, stepLabel } from '../lib/corrections'
 import type { AdminApi } from '../services/adminApi'
@@ -149,11 +149,20 @@ function rows(): [string, string][] {
                 :variant="action === 'publish' ? 'solid' : 'outline'"
                 class="min-h-11 sm:min-h-0"
                 :label="ACTION_LABELS[action]"
-                :disabled="busy"
+                :disabled="busy || actionBlockReason(detail.version, action) !== null"
+                :aria-describedby="actionBlockReason(detail.version, action) ? 'corrections-pending-notice' : undefined"
                 @click="emit('action', action)"
               />
             </div>
           </div>
+
+          <p
+            v-if="hasPendingCorrections(detail.version)"
+            id="corrections-pending-notice"
+            class="text-sm text-warning"
+          >
+            {{ CORRECTIONS_PENDING_NOTICE }}. Publicar y «Marcar como revisado» están deshabilitados hasta entonces.
+          </p>
 
           <UTabs
             :model-value="tab"

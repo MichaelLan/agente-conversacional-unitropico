@@ -25,6 +25,8 @@ export interface VersionSummary {
   version_label: string | null
   status: VersionStatus
   requires_review: boolean
+  /** Correcciones creadas/borradas aún no aplicadas por un reproceso (la API puede omitirlo). */
+  corrections_dirty?: boolean
   error_code: string | null
   processing_attempts: number
   source_sha256: string

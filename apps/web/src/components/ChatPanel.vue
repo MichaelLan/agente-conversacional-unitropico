@@ -16,6 +16,7 @@ import {
   countChars,
   normalizeQuestion,
 } from '../lib/chat-state'
+import { cooldownLabel } from '../lib/cooldown'
 import { FAQ_SUGGESTIONS } from '../data/faq'
 
 const props = defineProps<{
@@ -23,6 +24,10 @@ const props = defineProps<{
   status: ChatStatus
   retryableId: string | null
   announcement: string
+  /** Segundos de espera tras un 429 (0 = sin espera). */
+  cooldown: number
+  /** Solo cambia al iniciar y al terminar la espera. */
+  cooldownAnnouncement: string
 }>()
 
 const emit = defineEmits<{
@@ -36,7 +41,8 @@ const prompt = useTemplateRef('prompt')
 
 const length = computed(() => countChars(input.value.trim()))
 const busy = computed(() => props.status === 'submitted')
-const canSubmit = computed(() => !busy.value && normalizeQuestion(input.value) !== null)
+const waiting = computed(() => props.cooldown > 0)
+const canSubmit = computed(() => !busy.value && !waiting.value && normalizeQuestion(input.value) !== null)
 const submitStatus = computed(() => (busy.value ? 'submitted' : 'ready'))
 const counter = computed(() => (length.value >= QUESTION_COUNTER_FROM
   ? `${length.value}/${QUESTION_MAX_CHARS}`
@@ -120,6 +126,13 @@ defineExpose({ focusPrompt })
         >
           {{ announcement }}
         </p>
+        <p
+          class="sr-only"
+          role="status"
+          aria-live="polite"
+        >
+          {{ cooldownAnnouncement }}
+        </p>
 
         <ChatEmptyState
           v-if="messages.length === 0"
@@ -149,6 +162,7 @@ defineExpose({ focusPrompt })
                   v-if="message.role === 'assistant'"
                   :message="message"
                   :retryable="message.id === retryableId"
+                  :retry-disabled="waiting"
                   @retry="retry"
                 />
                 <template v-else>
@@ -194,6 +208,13 @@ defineExpose({ focusPrompt })
               />
             </template>
           </UChatPrompt>
+          <p
+            v-if="waiting"
+            class="mt-2 text-center text-xs text-muted"
+            aria-hidden="true"
+          >
+            {{ cooldownLabel(cooldown) }}
+          </p>
           <p class="mt-2 text-center text-xs text-pretty text-muted">
             Respuestas generadas a partir de documentos institucionales.
             Verifica la información con Bienestar Universitario.

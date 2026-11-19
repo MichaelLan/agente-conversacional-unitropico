@@ -16,11 +16,14 @@ export const HTTP_MESSAGES: Readonly<Record<HttpFailure, string>> = {
  */
 export class HttpError extends Error {
   readonly kind: HttpFailure
+  /** Espera indicada por el servidor (429), en segundos ya acotados. */
+  readonly retryAfterSeconds: number | null
 
-  constructor(kind: HttpFailure, message: string = HTTP_MESSAGES[kind]) {
+  constructor(kind: HttpFailure, message: string = HTTP_MESSAGES[kind], retryAfterSeconds: number | null = null) {
     super(message)
     this.name = 'HttpError'
     this.kind = kind
+    this.retryAfterSeconds = retryAfterSeconds
   }
 }
 
@@ -39,7 +42,7 @@ export const isAbortError = (error: unknown): error is RequestAbortedError =>
 export type Fetcher = (
   input: string,
   init: RequestInit,
-) => Promise<Pick<Response, 'status' | 'json'>>
+) => Promise<Pick<Response, 'status' | 'json'> & { headers?: { get(name: string): string | null } }>
 
 export interface RequestOptions {
   signal?: AbortSignal | undefined
@@ -50,6 +53,8 @@ export interface RequestOptions {
 export interface JsonResponse {
   status: number
   body: unknown
+  /** Valor crudo de `Retry-After` (solo se lee en 429), o null. */
+  retryAfter: string | null
 }
 
 export const DEFAULT_TIMEOUT_MS = 60_000
@@ -72,7 +77,7 @@ export async function requestJson(
   if (signal?.aborted) throw new RequestAbortedError()
   const timeout = AbortSignal.timeout(timeoutMs)
   const combined = signal ? AbortSignal.any([signal, timeout]) : timeout
-  let response: Pick<Response, 'status' | 'json'>
+  let response: Awaited<ReturnType<Fetcher>>
   try {
     const init: RequestInit = { method, headers: { Accept: 'application/json', ...headers }, signal: combined }
     if (body !== undefined) init.body = body
@@ -81,7 +86,11 @@ export async function requestJson(
     throw classify(signal, timeout, 'network')
   }
   try {
-    return { status: response.status, body: (await response.json()) as unknown }
+    return {
+      status: response.status,
+      body: (await response.json()) as unknown,
+      retryAfter: response.headers?.get('Retry-After') ?? null,
+    }
   } catch {
     throw classify(signal, timeout, 'invalid_response')
   }

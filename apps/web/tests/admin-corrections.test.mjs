@@ -88,7 +88,7 @@ test('prefill from chunk: single page, multipage and selection', () => {
   assert.equal(one.draft.find_text, 'texto')
   assert.deepEqual(one.pages, [3])
   const multi = lib.prefillFromChunk(chunk({ page_start: 13, page_end: 15 }))
-  assert.equal(multi.draft.page_number, '13')
+  assert.equal(multi.draft.page_number, '')
   assert.equal(multi.draft.find_text, '')
   assert.deepEqual(multi.pages, [13, 14, 15])
   assert.equal(lib.prefillFromChunk(chunk(), 'x'.repeat(501)).draft.find_text, '')
@@ -152,4 +152,50 @@ test('review components never use v-html', async () => {
     assert.doesNotMatch(source, /v-html|innerHTML/, name)
   }
   assert.match(await readFile(join(srcRoot, 'admin/components/ChunksList.vue'), 'utf8'), /whitespace-pre-line/)
+})
+
+test('prefill: single-page chunk preselects the page; multipage forces an explicit choice', () => {
+  const single = lib.prefillFromChunk(chunk({ page_start: 5, page_end: 5 }), 'texto')
+  assert.equal(single.draft.page_number, '5')
+  const multi = lib.prefillFromChunk(chunk({ page_start: 13, page_end: 14 }), 'texto')
+  assert.equal(multi.draft.page_number, '')
+  assert.deepEqual(multi.pages, [13, 14])
+  const draft = { ...multi.draft, find_text: 'a', reason: 'r' }
+  assert.equal(lib.validateDraft(draft, 20, true).page_number, 'Elige la página exacta donde aparece el texto.')
+  assert.equal(lib.validateDraft({ ...draft, page_number: '14' }, 20, true).page_number, undefined)
+  assert.equal(lib.PAGE_CHOICE_HELP, 'Elige la página exacta donde aparece el texto')
+})
+
+test('selectionWithin only returns text selected inside the chunk element', () => {
+  const inside = {}, outside = {}
+  const container = { contains: node => node === inside }
+  const sel = (anchorNode, focusNode, text = 'sel') => ({ anchorNode, focusNode, toString: () => text })
+  assert.equal(lib.selectionWithin(container, sel(inside, inside)), 'sel')
+  assert.equal(lib.selectionWithin(container, sel(inside, outside)), '')
+  assert.equal(lib.selectionWithin(container, sel(outside, inside)), '')
+  assert.equal(lib.selectionWithin(container, sel(null, null)), '')
+  assert.equal(lib.selectionWithin(undefined, sel(inside, inside)), '')
+  assert.equal(lib.selectionWithin(container, null), '')
+})
+
+test('corrections_dirty is an optional boolean in version validators and blocks publish', async () => {
+  const [v] = await loadSrc('admin/lib/versions')
+  const base = { id: 'v', document_id: 'd', version_label: null, status: 'ready', requires_review: false,
+    error_code: null, processing_attempts: 1, source_sha256: 'x', source_bytes: 1, page_count: 1, issued_at: null,
+    effective_from: null, effective_until: null, supersedes_version_id: null, created_at: 'a', updated_at: 'b', published_at: null }
+  assert.equal(api.isVersionSummary(base), true)
+  assert.equal(api.isVersionSummary({ ...base, corrections_dirty: true }), true)
+  assert.equal(api.isVersionSummary({ ...base, corrections_dirty: false }), true)
+  assert.equal(api.isVersionSummary({ ...base, corrections_dirty: 'yes' }), false)
+  assert.equal(v.actionBlockReason({ corrections_dirty: true }, 'publish'), v.CORRECTIONS_PENDING_NOTICE)
+  assert.equal(v.actionBlockReason({ corrections_dirty: false }, 'publish'), null)
+  assert.equal(v.actionBlockReason({}, 'publish'), null)
+  assert.equal(v.actionBlockReason({ corrections_dirty: true }, 'reprocess'), null)
+  assert.equal(v.CORRECTIONS_PENDING_NOTICE, 'Correcciones pendientes: reprocesa antes de revisar o publicar')
+})
+
+test('409 corrections_pending surfaces the server message', async () => {
+  const fetcher = async () => ({ status: 409, json: async () => ({ error: { code: 'corrections_pending', message: 'Hay correcciones sin aplicar.' } }) })
+  const client = api.createAdminApi({ getToken: () => TOKEN, fetcher })
+  await assert.rejects(client.publish('ver1'), e => e.code === 'corrections_pending' && e.status === 409 && e.message === 'Hay correcciones sin aplicar.')
 })

@@ -8,7 +8,9 @@ import ChatPanel from './components/ChatPanel.vue'
 import { useChat } from './composables/useChat'
 import { FAQ_CATEGORIES } from './data/faq'
 
-const { messages, status, retryableId, announcement, send, retry, abort, reset } = useChat()
+const {
+  messages, status, retryableId, announcement, cooldown, cooldownAnnouncement, send, retry, abort, reset,
+} = useChat()
 
 const sidebarOpen = ref(false)
 const activeFaq = ref<string | null>(null)
@@ -55,6 +57,8 @@ function startOver(): void {
         :messages="messages"
         :status="status"
         :retryable-id="retryableId"
+        :cooldown="cooldown"
+        :cooldown-announcement="cooldownAnnouncement"
         :announcement="announcement"
         @send="ask"
         @retry="retry"

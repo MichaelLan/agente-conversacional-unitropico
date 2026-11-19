@@ -101,6 +101,20 @@ export const ACTION_LABELS: Readonly<Record<VersionAction, string>> = {
   reprocess: 'Reprocesar',
 }
 
+export const CORRECTIONS_PENDING_NOTICE =
+  'Correcciones pendientes: reprocesa antes de revisar o publicar'
+
+export const hasPendingCorrections = (version: Pick<VersionSummary, 'corrections_dirty'>): boolean =>
+  version.corrections_dirty === true
+
+/** Motivo por el que una acción ofrecida está deshabilitada, o null. */
+export function actionBlockReason(
+  version: Pick<VersionSummary, 'corrections_dirty'>,
+  action: VersionAction,
+): string | null {
+  return action === 'publish' && hasPendingCorrections(version) ? CORRECTIONS_PENDING_NOTICE : null
+}
+
 export const ACTION_CONSEQUENCES: Readonly<Record<VersionAction, string>> = {
   publish: 'La versión pasará a estar disponible para el asistente y podrá citarse en las respuestas del chat público.',
   unpublish: 'La versión dejará de ser consultable por el asistente. Podrás volver a publicarla después.',

@@ -6,7 +6,7 @@ import UIcon from '@nuxt/ui/components/Icon.vue'
 import type { DropdownMenuItem } from '@nuxt/ui'
 import StatusBadge from './StatusBadge.vue'
 import {
-  ACTION_LABELS, SUSPECTED_START_FAILURE, allowedActions, documentTypeLabel, formatTimestamp, formatValidity,
+  ACTION_LABELS, CORRECTIONS_PENDING_NOTICE, hasPendingCorrections, actionBlockReason, SUSPECTED_START_FAILURE, allowedActions, documentTypeLabel, formatTimestamp, formatValidity,
   groupByDocument, isStaleUploaded,
 } from '../lib/versions'
 import type { VersionAction, VersionRow } from '../types'
@@ -31,9 +31,9 @@ const target = (row: VersionRow): string => `${row.document.title}, versión ${r
 function menu(row: VersionRow): DropdownMenuItem[][] {
   const locked = props.busy[row.version.id] !== undefined
   const actions = allowedActions(row.version).map(action => ({
-    label: ACTION_LABELS[action],
+    label: actionBlockReason(row.version, action) ? `${ACTION_LABELS[action]} (${CORRECTIONS_PENDING_NOTICE})` : ACTION_LABELS[action],
     icon: ACTION_ICONS[action],
-    disabled: locked,
+    disabled: locked || actionBlockReason(row.version, action) !== null,
     onSelect: () => emit('action', row, action),
   }))
   const detail = [{ label: 'Ver detalle', icon: 'i-lucide-panel-right-open', onSelect: () => emit('detail', row) }]
@@ -79,6 +79,10 @@ function menu(row: VersionRow): DropdownMenuItem[][] {
                 {{ formatTimestamp(row.version.updated_at) }}
                 <template v-if="row.version.requires_review"> · Revisión pendiente</template>
               </span>
+              <span
+                v-if="hasPendingCorrections(row.version)"
+                class="mt-1 block text-xs text-warning"
+              >{{ CORRECTIONS_PENDING_NOTICE }}</span>
               <span
                 v-if="isStaleUploaded(row.version)"
                 class="mt-1 block text-xs text-warning"
@@ -201,6 +205,12 @@ function menu(row: VersionRow): DropdownMenuItem[][] {
             </td>
             <td class="border-b border-default px-3 py-3 align-top">
               <StatusBadge :status="row.version.status" />
+              <p
+                v-if="hasPendingCorrections(row.version)"
+                class="mt-1 max-w-56 text-xs text-warning"
+              >
+                {{ CORRECTIONS_PENDING_NOTICE }}
+              </p>
               <p
                 v-if="isStaleUploaded(row.version)"
                 class="mt-1 max-w-56 text-xs text-warning"

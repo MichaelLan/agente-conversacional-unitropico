@@ -11,6 +11,7 @@ import {
   countChars,
   normalizeQuestion,
 } from '../lib/chat-state'
+import { parseRetryAfter } from '../lib/cooldown'
 import { HTTP_MESSAGES, HttpError, postJson, type RequestOptions } from './http'
 
 export const CHAT_ENDPOINT = '/api/chat'
@@ -116,8 +117,8 @@ function isValidRequest(request: ChatRequest): boolean {
  */
 export async function sendChat(request: ChatRequest, options: RequestOptions = {}): Promise<ChatResult> {
   if (!isValidRequest(request)) throw new HttpError('invalid_request')
-  const { status, body } = await postJson(CHAT_ENDPOINT, request, options)
-  if (status === 429) throw new HttpError('rate_limited', rateLimitMessage(body))
+  const { status, body, retryAfter } = await postJson(CHAT_ENDPOINT, request, options)
+  if (status === 429) throw new HttpError('rate_limited', rateLimitMessage(body), parseRetryAfter(retryAfter))
   const result = parseChatResponse(status, body)
   if (result === null) throw new HttpError('invalid_response')
   return result

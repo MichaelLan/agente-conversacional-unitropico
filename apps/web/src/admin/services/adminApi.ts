@@ -47,6 +47,7 @@ export function isVersionSummary(value: unknown): value is VersionSummary {
   return isRecord(value)
     && isStr(value.id) && isStr(value.document_id) && isNullableStr(value.version_label)
     && isStatus(value.status) && typeof value.requires_review === 'boolean'
+    && (value.corrections_dirty === undefined || typeof value.corrections_dirty === 'boolean')
     && isNullableStr(value.error_code) && isInt(value.processing_attempts)
     && isStr(value.source_sha256) && isInt(value.source_bytes) && isNullableInt(value.page_count)
     && isNullableStr(value.issued_at) && isNullableStr(value.effective_from)

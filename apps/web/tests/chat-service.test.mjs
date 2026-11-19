@@ -138,3 +138,21 @@ test('timeout is distinct from user abort', async () => {
   await assert.rejects(postJson('/api/chat', {}, { signal: already.signal, fetcher: () => assert.fail('no fetch') }),
     error => isAbortError(error))
 })
+
+test('Retry-After parsing: seconds, invalid → 60, capped at 300', async () => {
+  const { parseRetryAfter } = (await loadSrc('lib/cooldown'))[0]
+  assert.equal(parseRetryAfter('30'), 30)
+  assert.equal(parseRetryAfter(' 7 '), 7)
+  assert.equal(parseRetryAfter('0'), 0)
+  assert.equal(parseRetryAfter('9999'), 300)
+  for (const bad of [null, undefined, '', 'abc', '-5', '1.5', 'Wed, 21 Oct 2026 07:28:00 GMT']) {
+    assert.equal(parseRetryAfter(bad), 60)
+  }
+})
+
+test('429 carries Retry-After seconds on the HttpError', async () => {
+  const limited = { error: { code: 'rate_limited', message: 'Calma.' } }
+  const withHeader = async () => ({ status: 429, json: async () => limited, headers: { get: () => '12' } })
+  await assert.rejects(sendChat(request, { fetcher: withHeader }), { kind: 'rate_limited', retryAfterSeconds: 12 })
+  await assert.rejects(sendChat(request, { fetcher: reply(429, limited) }), { kind: 'rate_limited', retryAfterSeconds: 60 })
+})

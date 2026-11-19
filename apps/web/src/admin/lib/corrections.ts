@@ -33,9 +33,12 @@ export interface CorrectionDraft {
 
 export const emptyDraft = (): CorrectionDraft => ({ page_number: '', find_text: '', replace_text: '', reason: '' })
 
+export const PAGE_CHOICE_HELP = 'Elige la página exacta donde aparece el texto'
+
 /**
- * Precarga el formulario desde un chunk: página = page_start (el usuario elige
- * entre `pages` si es multipágina) y, si hay selección razonable, el texto a buscar.
+ * Precarga el formulario desde un chunk. Página preseleccionada solo si el chunk
+ * es de una única página; si abarca varias queda vacía y el usuario debe elegirla
+ * entre `pages`. Con selección razonable se precarga también el texto a buscar.
  */
 export function prefillFromChunk(
   chunk: Pick<Chunk, 'page_start' | 'page_end'>,
@@ -45,7 +48,7 @@ export function prefillFromChunk(
   return {
     draft: {
       ...emptyDraft(),
-      page_number: String(chunk.page_start),
+      page_number: chunk.page_start === chunk.page_end ? String(chunk.page_start) : '',
       find_text: picked.length > 0 && picked.length <= FIND_MAX ? picked : '',
     },
     pages: chunkPages(chunk),
@@ -54,10 +57,16 @@ export function prefillFromChunk(
 
 export type DraftErrors = Partial<Record<keyof CorrectionDraft, string>>
 
-export function validateDraft(draft: CorrectionDraft, pageCount: number | null = null): DraftErrors {
+export function validateDraft(
+  draft: CorrectionDraft,
+  pageCount: number | null = null,
+  pageChoiceRequired = false,
+): DraftErrors {
   const errors: DraftErrors = {}
   const page = Number(draft.page_number)
-  if (draft.page_number.trim() === '' || !Number.isInteger(page) || page < 1) {
+  if (draft.page_number.trim() === '' && pageChoiceRequired) {
+    errors.page_number = PAGE_CHOICE_HELP + '.'
+  } else if (draft.page_number.trim() === '' || !Number.isInteger(page) || page < 1) {
     errors.page_number = 'Indica un número de página entero (1 o más).'
   } else if (pageCount !== null && page > pageCount) {
     errors.page_number = `La versión solo tiene ${pageCount} páginas.`
@@ -141,4 +150,23 @@ export function eventDetailText(event: Pick<ProcessingEvent, 'step' | 'detail' |
   if (!match || label === undefined) return event.detail
   const parts = [match[2] ? `id ${match[2]}` : null, match[3] ? `página ${match[3]}` : null].filter(Boolean)
   return parts.length > 0 ? `${label} (${parts.join(', ')})` : label
+}
+
+/** Subconjunto de `Node` que necesita `selectionWithin`. */
+export interface ContainsNode<T> {
+  contains(other: T | null): boolean
+}
+
+/**
+ * Texto seleccionado solo si ambos extremos (anchor y focus) están dentro del
+ * contenedor; si no (u otra selección vacía) devuelve ''.
+ */
+export function selectionWithin<T>(
+  container: ContainsNode<T> | null | undefined,
+  selection: { anchorNode: T | null; focusNode: T | null; toString(): string } | null | undefined,
+): string {
+  if (!container || !selection) return ''
+  const { anchorNode, focusNode } = selection
+  if (anchorNode === null || focusNode === null) return ''
+  return container.contains(anchorNode) && container.contains(focusNode) ? selection.toString() : ''
 }

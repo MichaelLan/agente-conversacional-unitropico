@@ -4,7 +4,7 @@ import UAlert from '@nuxt/ui/components/Alert.vue'
 import UButton from '@nuxt/ui/components/Button.vue'
 import UInput from '@nuxt/ui/components/Input.vue'
 import USkeleton from '@nuxt/ui/components/Skeleton.vue'
-import { filterChunks, formatPages } from '../lib/corrections'
+import { filterChunks, formatPages, selectionWithin } from '../lib/corrections'
 import type { Chunk, ChunkPage } from '../types'
 
 const props = defineProps<{
@@ -22,8 +22,15 @@ const to = computed(() => (props.page ? props.page.offset + props.page.chunks.le
 const hasPrev = computed(() => (props.page?.offset ?? 0) > 0)
 const hasNext = computed(() => props.page !== null && props.page.offset + props.page.limit < props.page.total)
 
+const items = new Map<string, HTMLElement>()
+
+function setItem(id: string, element: unknown): void {
+  if (element instanceof HTMLElement) items.set(id, element)
+  else items.delete(id)
+}
+
 function onCorrect(chunk: Chunk): void {
-  const selection = typeof window === 'undefined' ? '' : (window.getSelection()?.toString() ?? '')
+  const selection = typeof window === 'undefined' ? '' : selectionWithin(items.get(chunk.id), window.getSelection())
   emit('correct', chunk, selection)
 }
 </script>
@@ -87,6 +94,7 @@ function onCorrect(chunk: Chunk): void {
           <li
             v-for="chunk in visible"
             :key="chunk.id"
+            :ref="(element: unknown) => setItem(chunk.id, element)"
             class="px-4 py-3.5"
           >
             <div class="mb-1.5 flex items-center gap-2">

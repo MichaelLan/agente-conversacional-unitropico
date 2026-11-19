@@ -8,7 +8,7 @@ import UInput from '@nuxt/ui/components/Input.vue'
 import USelect from '@nuxt/ui/components/Select.vue'
 import USwitch from '@nuxt/ui/components/Switch.vue'
 import { NONE, buildPatch, metadataFormFrom, validateMetadata, type MetadataForm } from '../lib/forms'
-import { DOCUMENT_TYPE_LABELS, STATUS_LABELS } from '../lib/versions'
+import { CORRECTIONS_PENDING_NOTICE, DOCUMENT_TYPE_LABELS, STATUS_LABELS, hasPendingCorrections } from '../lib/versions'
 import { DOCUMENT_TYPES, type VersionPatch, type VersionRow } from '../types'
 
 const props = defineProps<{
@@ -23,6 +23,8 @@ const emit = defineEmits<{ save: [patch: VersionPatch]; cancel: [] }>()
 const original = metadataFormFrom(props.row.document.title, props.row.version, props.row.document.document_type)
 const state = ref<MetadataForm>({ ...original })
 const noChanges = ref(false)
+/** Con correcciones pendientes no se puede marcar como revisada una versión pendiente. */
+const reviewBlocked = hasPendingCorrections(props.row.version) && original.requires_review
 
 const typeItems: { label: string; value: string }[] = DOCUMENT_TYPES.map(value => ({ label: DOCUMENT_TYPE_LABELS[value], value }))
 const supersedesItems = computed(() => [
@@ -132,7 +134,8 @@ function submit(): void {
     <USwitch
       :model-value="!state.requires_review"
       label="Marcar como revisado"
-      description="Necesario para poder publicar la versión."
+      :description="reviewBlocked ? `${CORRECTIONS_PENDING_NOTICE}.` : 'Necesario para poder publicar la versión.'"
+      :disabled="reviewBlocked"
       @update:model-value="state.requires_review = !$event"
     />
     <div aria-live="polite">

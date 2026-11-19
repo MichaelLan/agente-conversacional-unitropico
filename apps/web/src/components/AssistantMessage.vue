@@ -8,6 +8,8 @@ defineProps<{
   message: AssistantMessage
   /** Solo el último fallo admite «Reintentar». */
   retryable: boolean
+  /** Espera tras un 429: el botón queda deshabilitado. */
+  retryDisabled?: boolean
 }>()
 
 const emit = defineEmits<{ retry: [] }>()
@@ -74,6 +76,7 @@ const emit = defineEmits<{ retry: [] }>()
         color="neutral"
         variant="outline"
         size="sm"
+        :disabled="retryDisabled"
         @click="emit('retry')"
       />
     </template>

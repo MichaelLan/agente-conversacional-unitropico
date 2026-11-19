@@ -117,3 +117,36 @@ test('FAQ questions go through the same send as the manual prompt', async () => 
   await chat.send(question)
   assert.deepEqual(server.calls, [{ question, history: [] }])
 })
+
+function fakeClock() {
+  let now = 0
+  let cb = null
+  return {
+    now: () => now,
+    setInterval: fn => { cb = fn; return 1 },
+    clearInterval: () => { cb = null },
+    advance(ms) { now += ms; cb?.() },
+    get active() { return cb !== null },
+  }
+}
+
+test('429 with Retry-After blocks send and retry until the countdown ends', async () => {
+  const clock = fakeClock()
+  const server = fakeServer(new HttpError('rate_limited', 'Espera.', 3), answered('ok'))
+  const chat = useChat({ request: server.request, clock })
+  await chat.send('hola')
+  assert.equal(chat.cooldown.value, 3)
+  assert.equal(chat.cooldownAnnouncement.value, 'Puedes intentarlo de nuevo en 3 s.')
+  assert.equal(await chat.retry(), false)
+  assert.equal(await chat.send('otra'), false)
+  assert.equal(server.calls.length, 1)
+  clock.advance(1000)
+  assert.equal(chat.cooldown.value, 2)
+  assert.equal(chat.cooldownAnnouncement.value, 'Puedes intentarlo de nuevo en 3 s.')
+  clock.advance(2000)
+  assert.equal(chat.cooldown.value, 0)
+  assert.equal(chat.cooldownAnnouncement.value, 'Ya puedes intentarlo de nuevo.')
+  assert.equal(clock.active, false)
+  assert.equal(await chat.retry(), true)
+  assert.equal(chat.status.value, 'ready')
+})

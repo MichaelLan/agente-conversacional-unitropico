@@ -7,7 +7,7 @@ import UTextarea from '@nuxt/ui/components/Textarea.vue'
 import UIcon from '@nuxt/ui/components/Icon.vue'
 import UBadge from '@nuxt/ui/components/Badge.vue'
 import {
-  FIND_MAX, MATCH_RULE_HELP, PUBLISHED_BLOCK_MESSAGE, REASON_MAX, REPLACE_MAX,
+  FIND_MAX, MATCH_RULE_HELP, PAGE_CHOICE_HELP, PUBLISHED_BLOCK_MESSAGE, REASON_MAX, REPLACE_MAX,
   draftToInput, emptyDraft, sortCorrections, validateDraft,
   type CorrectionDraft,
 } from '../lib/corrections'
@@ -39,7 +39,7 @@ const draft = ref<CorrectionDraft>(emptyDraft())
 const pages = ref<number[]>([])
 const submitted = ref(false)
 const confirming = ref<string | null>(null)
-const errors = computed(() => validateDraft(draft.value, props.pageCount))
+const errors = computed(() => validateDraft(draft.value, props.pageCount, pages.value.length > 1))
 const sorted = computed(() => sortCorrections(props.corrections))
 const disabled = computed(() => !props.editable || props.submitting)
 
@@ -226,7 +226,14 @@ const shown = (key: keyof CorrectionDraft): string | undefined => (submitted.val
           v-model="draft.page_number"
           class="min-h-11 w-full rounded-md bg-default px-2.5 text-base ring ring-accented focus-visible:outline-2 focus-visible:outline-primary sm:min-h-9 sm:text-sm"
           :disabled="disabled"
+          aria-describedby="page-choice-help"
         >
+          <option
+            value=""
+            disabled
+          >
+            Elige una página
+          </option>
           <option
             v-for="p in pages"
             :key="p"
@@ -244,6 +251,11 @@ const shown = (key: keyof CorrectionDraft): string | undefined => (submitted.val
           min="1"
           :disabled="disabled"
         />
+        <span
+          v-if="pages.length > 1"
+          id="page-choice-help"
+          class="mt-1 block text-xs text-muted"
+        >{{ PAGE_CHOICE_HELP }}.</span>
         <span
           v-if="shown('page_number')"
           class="mt-1 block text-xs text-error"
