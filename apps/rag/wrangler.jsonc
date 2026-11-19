@@ -2,5 +2,30 @@
   "name": "unitropico-rag-poc",
   "main": "src/worker.py",
   "compatibility_date": "2026-11-08",
-  "compatibility_flags": ["python_workers"]
+  "compatibility_flags": ["python_workers"],
+  // Internal service: reachable only through the API's service binding.
+  "workers_dev": false,
+  "preview_urls": false,
+  "vars": {
+    "GENERATION_MODEL": "openai/gpt-6-luna",
+    "EMBEDDING_MODEL": "openai/text-embedding-3-small",
+    "EMBEDDING_DIMENSIONS": 1536,
+    "RETRIEVAL_MODE": "hybrid"
+  },
+  // Secret (wrangler secret put): AI_GATEWAY_API_KEY.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "unitropico",
+      // PLACEHOLDER: replace with the id printed by `wrangler d1 create unitropico`
+      // once creating the remote database is authorized. Local dev ignores it.
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "../../infra/d1/migrations"
+    }
+  ],
+  // Index not created yet (see infra/vectorize/README.md). Vectorize has no
+  // local emulation: under `pywrangler dev --local` this binding is unusable.
+  "vectorize": [
+    { "binding": "VECTORIZE", "index_name": "unitropico-chunks-1536" }
+  ]
 }

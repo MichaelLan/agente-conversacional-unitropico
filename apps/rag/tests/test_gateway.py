@@ -5,8 +5,16 @@ from dataclasses import FrozenInstanceError
 import pytest
 from pydantic import SecretStr
 
-from unitropico_rag.domain.generation import GeneratedText, GenerationError, TokenUsage
+from unitropico_rag.domain.answer import ANSWER_CANDIDATE_SCHEMA
+from unitropico_rag.domain.generation import (
+    GeneratedText,
+    GenerationError,
+    StructuredOutput,
+    TokenUsage,
+)
 from unitropico_rag.infra.gateway import GatewayClient
+
+URL = "https://gateway.test/v1/chat/completions"
 
 SECRET = "fake-secret-never-live"
 GOOD = {
@@ -49,7 +57,16 @@ class Fetch:
 
 def client(adapter, **kwargs):
     """Construct a client using explicit test-only credentials and model."""
-    config = {"model": "caller/model", "api_key": SecretStr(SECRET), "fetch": adapter}
+    config = {
+        "model": "caller/model",
+        "api_key": SecretStr(SECRET),
+        "fetch": adapter,
+        "url": URL,
+        "timeout": 20,
+        "max_tokens": 2048,
+        "max_input_chars": 20000,
+        "reasoning_effort": "low",
+    }
     return GatewayClient(**(config | kwargs))
 
 
@@ -79,16 +96,17 @@ def test_request_and_immutable_candidate():
         result.content = "changed"
     assert len(fetch.calls) == 1
     url, kwargs = fetch.calls[0]
-    assert url == "https://ai-gateway.vercel.sh/v1/chat/completions"
+    assert url == URL
     assert set(kwargs) == {"method", "headers", "body", "redirect"}
-    assert kwargs["method"] == "POST" and kwargs["redirect"] == "error"
+    assert kwargs["method"] == "POST" and kwargs["redirect"] == "manual"
     assert kwargs["headers"] == {
         "Authorization": f"Bearer {SECRET}",
         "Content-Type": "application/json",
     }
     assert json.loads(kwargs["body"]) == {
         "model": "caller/model",
-        "max_tokens": 512,
+        "max_tokens": 2048,
+        "reasoning_effort": "low",
         "stream": False,
         "messages": [
             {"role": "system", "content": "Sistema"},
@@ -112,8 +130,13 @@ def test_request_and_immutable_candidate():
         {"timeout": float("nan")},
         {"max_tokens": True},
         {"max_tokens": 0},
-        {"max_tokens": 2049},
+        {"max_tokens": 32769},
         {"fetch": None},
+        {"url": "http://gateway.test"},
+        {"url": None},
+        {"max_input_chars": 0},
+        {"reasoning_effort": "extreme"},
+        {"structured_output": {"name": "x"}},
     ],
 )
 def test_invalid_config(config):
@@ -134,10 +157,11 @@ def test_invalid_input(system, user):
 
 
 @pytest.mark.parametrize("status", [True, "200", 201, 204, 302, 401, 429, 500])
-def test_status(status):
+def test_status(status, caplog):
     """Reject all but an integer 200 without retrying or reading an error body."""
     fetch = Fetch(status=status, failure="json")
     assert_error(lambda: complete(client(fetch)), "http_error", True, fetch)
+    assert "code=http_error" in caplog.text and SECRET not in caplog.text
 
 
 @pytest.mark.parametrize(
@@ -148,10 +172,12 @@ def test_status(status):
         ("timeout", "timeout"),
     ],
 )
-def test_transport(failure, code):
-    """Sanitize network, JSON and native deadline failures without retries."""
+def test_transport(failure, code, caplog):
+    """Sanitize network, JSON and deadline failures; log only code and type."""
     fetch = Fetch(failure=failure, delay=0.02 if failure == "timeout" else 0)
     assert_error(lambda: complete(client(fetch, timeout=0.001)), code, True, fetch)
+    assert f"code={code}" in caplog.text
+    assert SECRET not in caplog.text and "Consulta" not in caplog.text
 
 
 @pytest.mark.parametrize(
@@ -170,7 +196,6 @@ def test_invalid_candidate(payload):
         ("content", None),
         ("content", " "),
         ("content", 1),
-        ("finish_reason", "length"),
         ("finish_reason", "tool_calls"),
         ("finish_reason", None),
         ("refusal", "no"),
@@ -223,6 +248,48 @@ def test_bounds_and_alias():
     """Accept boundary inputs and ignore provider model aliases in responses."""
     fetch = Fetch(GOOD | {"model": "provider-alias"})
     assert complete(
-        client(fetch, timeout=60, max_tokens=2048), "s", "x" * 19999
+        client(fetch, timeout=60, max_tokens=32768, max_input_chars=100),
+        "s",
+        "x" * 99,
     ).content
-    assert json.loads(fetch.calls[0][1]["body"])["max_tokens"] == 2048
+    assert json.loads(fetch.calls[0][1]["body"])["max_tokens"] == 32768
+    fetch = Fetch()
+    assert_error(
+        lambda: complete(client(fetch, max_input_chars=100), "s", "x" * 100),
+        "invalid_input",
+        False,
+        fetch,
+    )
+
+
+def test_truncated_output_is_classified():
+    """finish_reason=length gets its own code to diagnose the token budget."""
+    payload = json.loads(json.dumps(GOOD))
+    payload["choices"][0]["finish_reason"] = "length"
+    fetch = Fetch(payload)
+    assert_error(lambda: complete(client(fetch)), "truncated", True, fetch)
+
+
+def test_reasoning_fields_in_message_are_accepted():
+    """Gateway may add message.reasoning/reasoning_details; content is still used."""
+    payload = json.loads(json.dumps(GOOD))
+    payload["choices"][0]["message"] |= {"reasoning": "...", "reasoning_details": []}
+    assert complete(client(Fetch(payload))).content == " Candidato á "
+
+
+@pytest.mark.parametrize("effort", ["none", "medium", "high"])
+def test_reasoning_effort_and_structured_output(effort):
+    """Send reasoning_effort and a strict json_schema response_format."""
+    fetch = Fetch()
+    structured = StructuredOutput("answer_candidate", ANSWER_CANDIDATE_SCHEMA)
+    complete(client(fetch, reasoning_effort=effort, structured_output=structured))
+    body = json.loads(fetch.calls[0][1]["body"])
+    assert body["reasoning_effort"] == effort
+    assert body["response_format"] == {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "answer_candidate",
+            "strict": True,
+            "schema": ANSWER_CANDIDATE_SCHEMA,
+        },
+    }

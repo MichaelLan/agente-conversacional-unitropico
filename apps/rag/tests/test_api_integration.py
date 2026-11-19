@@ -1,17 +1,18 @@
 """Verify the real API→binding client→RAG contract, not the Workers runtime."""
 
 import json
-from dataclasses import asdict, replace
+from dataclasses import replace
 from hashlib import sha256
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 from test_retrieval import CANDIDATE, ENTRY, Catalog, Retriever
-from test_retrieval_http import request
+from test_retrieval_http import evidence_json, request
 
-from unitropico_rag.main import create_app as create_rag
-from unitropico_rag.services.retrieval import RetrievalService
+from unitropico_rag.core.settings import Settings
+from unitropico_rag.main import build_app
+from unitropico_rag.services.prompt import DEFAULT_REFERRAL
 
 EMPTY = {"status": "unavailable", "evidence": []}
 FIXTURE = replace(
@@ -40,7 +41,8 @@ class AsgiBinding:
     async def fetch(self, url, *, method, headers, body):
         """Await downstream HTTP without sockets, SDKs or fabricated responses."""
         self.calls.append((url, method, headers, body))
-        assert url == "https://rag.internal/retrieval/query"
+        assert url.startswith("https://rag.internal/")
+        path = url.removeprefix("https://rag.internal")
         messages = []
 
         async def receive():
@@ -58,8 +60,8 @@ class AsgiBinding:
                 "http_version": "1.1",
                 "method": method,
                 "scheme": "https",
-                "path": "/retrieval/query",
-                "raw_path": b"/retrieval/query",
+                "path": path,
+                "raw_path": path.encode(),
                 "query_string": b"",
                 "root_path": "",
                 "headers": [
@@ -89,10 +91,12 @@ def compose(monkeypatch):
     from unitropico_api.infra.service_binding import RagServiceBindingClient
     from unitropico_api.main import create_app as create_api
 
-    def build(service=None):
+    def build(retriever=None, catalog=None):
         """Compose both real applications with the real binding client."""
-        binding = AsgiBinding(create_rag(retrieval_service=service))
-        return create_api(rag_client=RagServiceBindingClient(binding)), binding
+        rag = build_app(Settings(), retriever=retriever, catalog=catalog)
+        binding = AsgiBinding(rag)
+        client = RagServiceBindingClient(binding)
+        return create_api(rag_client=client, chat_client=client), binding
 
     return build
 
@@ -118,8 +122,11 @@ def test_exact_evidence_then_unpublication(compose, section):
     candidate = replace(FIXTURE, section=section)
     catalog = Catalog(replace(REGISTRY, section=section))
     retriever = Retriever([candidate])
-    app, binding = compose(RetrievalService(retriever, catalog))
-    found = {"status": "evidence_found", "evidence": [asdict(candidate)]}
+    app, binding = compose(retriever, catalog)
+    found = {
+        "status": "evidence_found",
+        "evidence": [evidence_json(candidate, catalog.entry)],
+    }
     payload = {"question": " fixture question ", "limit": 1}
     assert request(app, payload) == (200, found)
     catalog.entry = replace(catalog.entry, status="unpublished")
@@ -127,13 +134,13 @@ def test_exact_evidence_then_unpublication(compose, section):
     assert request(app, payload) == (200, abstained)
     assert binding.responses == [(200, found), (200, abstained)]
     assert len(binding.calls) == 2
-    assert retriever.calls == [("fixture question", 1)] * 2
+    assert retriever.calls == [("fixture question", 3)] * 2
     assert catalog.calls == [candidate.chunk_id] * 2
 
 
 @pytest.mark.parametrize("dependency", ["retriever", "catalog", "partial"])
-def test_dependency_failure_stays_private(compose, dependency, caplog, capsys):
-    """Discard partial results and keep fake secrets out of HTTP and logs."""
+def test_dependency_failure_stays_private(compose, dependency, caplog):
+    """Discard partial results; logs may name failures but never content."""
 
     class FailingCatalog(Catalog):
         """Allow one lookup before a simulated infrastructure failure."""
@@ -149,14 +156,14 @@ def test_dependency_failure_stays_private(compose, dependency, caplog, capsys):
         fail=dependency == "retriever",
     )
     catalog = FailingCatalog(REGISTRY, fail=dependency == "catalog")
-    app, binding = compose(RetrievalService(retriever, catalog))
+    app, binding = compose(retriever, catalog)
     assert request(app, {"question": "SECRET fixture question"}) == (503, EMPTY)
     assert len(binding.calls) == 1
     assert binding.responses == [(503, EMPTY)]
-    assert retriever.calls == [("SECRET fixture question", 5)]
+    assert retriever.calls == [("SECRET fixture question", 15)]
     assert catalog.calls == ([] if dependency == "retriever" else [FIXTURE.chunk_id])
-    assert caplog.text == ""
-    assert capsys.readouterr() == ("", "")
+    assert "SECRET" not in caplog.text
+    assert FIXTURE.text.strip() not in caplog.text
 
 
 @pytest.mark.parametrize(
@@ -174,7 +181,7 @@ def test_dependency_failure_stays_private(compose, dependency, caplog, capsys):
 def test_invalid_input_stops_at_api(compose, payload):
     """Reject privileged or invalid input without any downstream I/O."""
     retriever, catalog = Retriever(), Catalog(REGISTRY)
-    app, binding = compose(RetrievalService(retriever, catalog))
+    app, binding = compose(retriever, catalog)
     status, body = request(app, payload)
     assert status == 422
     assert isinstance(body["detail"], list)
@@ -188,3 +195,17 @@ def test_health_never_calls_binding(compose):
     app, binding = compose()
     assert request(app, path="/health", method="GET") == (200, {"status": "ok"})
     assert binding.calls == binding.responses == []
+
+
+def test_chat_crosses_binding_to_answer(compose):
+    """API /chat reaches RAG /answer and relays its 503 referral."""
+    app, binding = compose()
+    status, body = request(app, {"question": " fixture question "}, path="/chat")
+    assert (status, body) == (
+        503,
+        {"status": "unavailable", "referral": DEFAULT_REFERRAL},
+    )
+    assert binding.calls[0][0] == "https://rag.internal/answer"
+    assert binding.responses == [
+        (503, {"status": "unavailable", "referral": DEFAULT_REFERRAL})
+    ]

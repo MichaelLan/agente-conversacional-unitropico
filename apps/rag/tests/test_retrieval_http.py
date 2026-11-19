@@ -1,14 +1,35 @@
 import asyncio
 import json
-from dataclasses import asdict, replace
+from dataclasses import replace
 from typing import Any
 
 import pytest
 from fastapi import FastAPI
 from test_retrieval import CANDIDATE, ENTRY, Catalog, Retriever
 
-from unitropico_rag.main import create_app
-from unitropico_rag.services.retrieval import RetrievalService
+from unitropico_rag.core.settings import Settings
+from unitropico_rag.main import build_app
+
+
+def make_app(retriever=None, catalog=None) -> FastAPI:
+    """Compose the real app with test adapters and no generator."""
+    return build_app(Settings(), retriever=retriever, catalog=catalog)
+
+
+def evidence_json(candidate=CANDIDATE, entry=ENTRY) -> dict[str, Any]:
+    """Expected HTTP evidence item for a candidate and its catalog entry."""
+    return {
+        "document_id": candidate.document_id,
+        "version_id": candidate.version_id,
+        "chunk_id": candidate.chunk_id,
+        "source_sha256": candidate.source_sha256,
+        "page_start": candidate.page_start,
+        "page_end": candidate.page_end,
+        "section": candidate.section,
+        "document_title": entry.document_title,
+        "version_label": entry.version_label,
+        "text": candidate.text,
+    }
 
 
 def request(
@@ -55,7 +76,7 @@ def request(
 
 def test_default_unavailable() -> None:
     """Report unconfigured retrieval explicitly without a fake answer."""
-    assert request(create_app(), {"question": "apoyos"}) == (
+    assert request(make_app(), {"question": "apoyos"}) == (
         503,
         {"status": "unavailable", "evidence": []},
     )
@@ -65,12 +86,12 @@ def test_default_unavailable() -> None:
 def test_empty_and_boundaries(question: str, limit: int) -> None:
     """Normalize bounded requests and distinguish empty operational retrieval."""
     retriever, catalog = Retriever(), Catalog()
-    app = create_app(retrieval_service=RetrievalService(retriever, catalog))
+    app = make_app(retriever, catalog)
     assert request(app, {"question": question, "limit": limit}) == (
         200,
         {"status": "abstained", "evidence": []},
     )
-    assert retriever.calls == [(question.strip(), limit)]
+    assert retriever.calls == [(question.strip(), limit * 3)]
     assert catalog.calls == []
 
 
@@ -80,12 +101,15 @@ def test_exact_evidence_and_current_eligibility(section: str | None) -> None:
     candidate = replace(CANDIDATE, section=section)
     retriever = Retriever([candidate])
     catalog = Catalog(replace(ENTRY, section=section))
-    app = create_app(retrieval_service=RetrievalService(retriever, catalog))
+    app = make_app(retriever, catalog)
     assert request(app, {"question": "  apoyos  "}) == (
         200,
-        {"status": "evidence_found", "evidence": [asdict(candidate)]},
+        {
+            "status": "evidence_found",
+            "evidence": [evidence_json(candidate, catalog.entry)],
+        },
     )
-    assert retriever.calls == [("apoyos", 5)]
+    assert retriever.calls == [("apoyos", 15)]
     for changes in ({"status": "unpublished"}, {"requires_review": True}):
         catalog.entry = replace(ENTRY, section=section, **changes)
         assert request(app, {"question": "apoyos"}) == (
@@ -96,8 +120,8 @@ def test_exact_evidence_and_current_eligibility(section: str | None) -> None:
 
 
 @pytest.mark.parametrize("dependency", ["retriever", "catalog", "partial"])
-def test_infrastructure_failure_is_private(dependency, caplog, capsys) -> None:
-    """Return 503 without partial text, exception details or content logging."""
+def test_infrastructure_failure_is_private(dependency, caplog) -> None:
+    """Return 503 without partial text; logs carry no question or content."""
 
     class FailingCatalog(Catalog):
         """Fail after one eligible candidate when testing partial results."""
@@ -113,13 +137,13 @@ def test_infrastructure_failure_is_private(dependency, caplog, capsys) -> None:
         fail=dependency == "retriever",
     )
     catalog = FailingCatalog(fail=dependency == "catalog")
-    app = create_app(retrieval_service=RetrievalService(retriever, catalog))
+    app = make_app(retriever, catalog)
     assert request(app, {"question": "SECRET question"}) == (
         503,
         {"status": "unavailable", "evidence": []},
     )
-    assert caplog.text == ""
-    assert capsys.readouterr() == ("", "")
+    assert "retrieval_failed" in caplog.text
+    assert "SECRET" not in caplog.text and CANDIDATE.text not in caplog.text
 
 
 @pytest.mark.parametrize(
@@ -142,7 +166,7 @@ def test_infrastructure_failure_is_private(dependency, caplog, capsys) -> None:
 def test_invalid_input_never_calls_adapters(payload: object) -> None:
     """Reject invalid contracts without touching adapters or subsequent requests."""
     retriever, catalog = Retriever(), Catalog()
-    app = create_app(retrieval_service=RetrievalService(retriever, catalog))
+    app = make_app(retriever, catalog)
     status, body = request(app, payload)
     assert status == 422
     assert isinstance(body["detail"], list)
@@ -151,19 +175,16 @@ def test_invalid_input_never_calls_adapters(payload: object) -> None:
         200,
         {"status": "abstained", "evidence": []},
     )
-    assert retriever.calls == [("ok", 5)]
+    assert retriever.calls == [("ok", 15)]
     assert catalog.calls == []
 
 
-def test_previous_routes_remain_available() -> None:
-    """Preserve liveness and deterministic PoC without introducing chat."""
-    app = create_app()
+def test_health_and_removed_routes() -> None:
+    """Keep liveness; the PoC route and /chat do not exist in the RAG."""
+    app = make_app()
     assert request(app, path="/health", method="GET") == (200, {"status": "ok"})
-    assert request(app, {"question": " x "}, path="/poc/query") == (
-        200,
-        {"mode": "deterministic-poc", "normalized_question": "x"},
-    )
-    assert request(app, {"question": "x"}, path="/chat") == (
-        404,
-        {"detail": "Not Found"},
-    )
+    for path in ("/poc/query", "/chat"):
+        assert request(app, {"question": "x"}, path=path) == (
+            404,
+            {"detail": "Not Found"},
+        )

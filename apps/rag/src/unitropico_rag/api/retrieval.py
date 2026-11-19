@@ -4,7 +4,7 @@ from fastapi import APIRouter, Response
 from pydantic import BaseModel, ConfigDict
 
 from unitropico_rag.domain.evidence import RetrievalQuery
-from unitropico_rag.services.retrieval import RetrievalService
+from unitropico_rag.services.answer import EvidenceRetrieval
 
 
 class EvidenceResponse(BaseModel):
@@ -15,8 +15,11 @@ class EvidenceResponse(BaseModel):
     version_id: str
     chunk_id: str
     source_sha256: str
-    page: int
+    page_start: int
+    page_end: int
     section: str | None
+    document_title: str
+    version_label: str | None
     text: str
 
 
@@ -28,7 +31,7 @@ class RetrievalResponse(BaseModel):
     evidence: list[EvidenceResponse]
 
 
-def create_retrieval_router(service: RetrievalService) -> APIRouter:
+def create_retrieval_router(service: EvidenceRetrieval) -> APIRouter:
     """Bind the internal retrieval transport to an explicitly composed service."""
     router = APIRouter()
 
@@ -42,8 +45,8 @@ def create_retrieval_router(service: RetrievalService) -> APIRouter:
 
         This internal route does not generate answers or establish sufficiency.
         Questions are trimmed to 1–500 characters; limit is 1–20 (default 5).
-        Unknown fields are rejected. Page denotes the physical PDF page, not an
-        inferred printed page; null sections remain null and no URL is invented.
+        Unknown fields are rejected. Pages are physical PDF pages from the
+        catalog, not inferred printed pages; null sections remain null.
         """
         result = await service.query(payload)
         if result.status == "unavailable":
@@ -56,8 +59,11 @@ def create_retrieval_router(service: RetrievalService) -> APIRouter:
                     version_id=item.version_id,
                     chunk_id=item.chunk_id,
                     source_sha256=item.source_sha256,
-                    page=item.page,
+                    page_start=item.page_start,
+                    page_end=item.page_end,
                     section=item.section,
+                    document_title=item.document_title,
+                    version_label=item.version_label,
                     text=item.text,
                 )
                 for item in result.evidence

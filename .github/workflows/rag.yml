@@ -5,12 +5,12 @@ on:
     paths:
       - 'apps/rag/**'
       - '.github/workflows/rag.yml'
-      - 'ARQUITECTURA.md'
+      - 'infra/d1/**'
   pull_request:
     paths:
       - 'apps/rag/**'
       - '.github/workflows/rag.yml'
-      - 'ARQUITECTURA.md'
+      - 'infra/d1/**'
   workflow_dispatch:
 
 permissions:

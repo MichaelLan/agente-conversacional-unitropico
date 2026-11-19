@@ -1,5 +1,7 @@
-from dataclasses import dataclass
-from typing import Protocol
+from dataclasses import dataclass, field
+from typing import Literal, Protocol
+
+ReasoningEffort = Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"]
 
 
 @dataclass(frozen=True)
@@ -19,6 +21,14 @@ class GeneratedText:
     usage: TokenUsage | None = None
 
 
+@dataclass(frozen=True)
+class StructuredOutput:
+    """Name and strict JSON Schema requested from the provider for the candidate."""
+
+    name: str
+    schema: dict[str, object] = field(hash=False)
+
+
 class GenerationError(Exception):
     """Expose a safe code and whether consumption may already have occurred."""
 
@@ -30,7 +40,7 @@ class GenerationError(Exception):
 
 
 class TextGenerator(Protocol):
-    """Define the asynchronous generation boundary for future orchestration."""
+    """Define the asynchronous generation boundary used by answer orchestration."""
 
     async def complete(self, system_prompt: str, user_content: str) -> GeneratedText:
         """Generate one unvalidated candidate or raise a controlled error."""
