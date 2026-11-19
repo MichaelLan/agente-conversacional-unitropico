@@ -10,3 +10,12 @@ class UpstreamUnavailable(Exception):
         super().__init__(reason)
         self.reason = reason
         self.referral = referral
+
+
+class RateLimiterUnavailable(Exception):
+    """Signal a missing or failing rate limiter; carries only a safe reason."""
+
+    def __init__(self, reason: str) -> None:
+        """Keep a content-free reason (binding missing, error type)."""
+        super().__init__(reason)
+        self.reason = reason

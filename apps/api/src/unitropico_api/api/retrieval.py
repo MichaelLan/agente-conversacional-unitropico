@@ -1,18 +1,26 @@
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, Response, params
 
 from unitropico_api.domain.errors import MalformedUpstream
 from unitropico_api.domain.retrieval import RetrievalQuery, RetrievalResponse
 from unitropico_api.services.retrieval import QueryCoordinationService
 
 
-def create_retrieval_router(service: QueryCoordinationService) -> APIRouter:
-    """Bind coordination to HTTP without providing a runtime RAG transport."""
+def create_retrieval_router(
+    service: QueryCoordinationService,
+    dependencies: list[params.Depends] | None = None,
+) -> APIRouter:
+    """Bind coordination to HTTP without providing a runtime RAG transport.
+
+    `dependencies` run before the body reaches the service (rate limiting).
+    """
     router = APIRouter()
 
     @router.post(
         "/retrieval/query",
         response_model=RetrievalResponse,
+        dependencies=dependencies or [],
         responses={
+            429: {"description": "Rate limited; error envelope, Retry-After"},
             502: {"model": RetrievalResponse, "description": "Malformed upstream"},
             503: {"model": RetrievalResponse, "description": "Unavailable"},
         },

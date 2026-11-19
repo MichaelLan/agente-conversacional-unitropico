@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, params
 from fastapi.responses import JSONResponse
 
 from unitropico_api.domain.chat import ChatRequest, ChatResponse
@@ -12,7 +12,7 @@ DEFAULT_REFERRAL = (
 MAX_REFERRAL_LENGTH = 1000
 
 
-def _unavailable(referral: str | None) -> dict[str, str]:
+def unavailable_body(referral: str | None = None) -> dict[str, str]:
     """Build the unavailable body, using a valid upstream referral if present."""
     valid = (
         referral is not None
@@ -25,14 +25,21 @@ def _unavailable(referral: str | None) -> dict[str, str]:
     }
 
 
-def create_chat_router(service: ChatService) -> APIRouter:
-    """Bind the chat service to the public POST /chat route."""
+def create_chat_router(
+    service: ChatService, dependencies: list[params.Depends] | None = None
+) -> APIRouter:
+    """Bind the chat service to the public POST /chat route.
+
+    `dependencies` run before the body reaches the service (rate limiting).
+    """
     router = APIRouter()
 
     @router.post(
         "/chat",
         response_model=ChatResponse,
+        dependencies=dependencies or [],
         responses={
+            429: {"description": "Rate limited; error envelope, Retry-After"},
             502: {"description": "Invalid RAG payload"},
             503: {"description": "RAG unavailable; carries a referral"},
         },
@@ -46,9 +53,9 @@ def create_chat_router(service: ChatService) -> APIRouter:
         try:
             result = await service.answer(payload)
         except UpstreamUnavailable as error:
-            return JSONResponse(_unavailable(error.referral), status_code=503)
+            return JSONResponse(unavailable_body(error.referral), status_code=503)
         except MalformedUpstream:
-            return JSONResponse(_unavailable(None), status_code=502)
+            return JSONResponse(unavailable_body(None), status_code=502)
         return JSONResponse(result.model_dump(mode="json"))
 
     return router

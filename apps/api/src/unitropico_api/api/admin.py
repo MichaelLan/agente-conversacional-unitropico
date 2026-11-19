@@ -15,7 +15,12 @@ from pydantic import ValidationError
 from unitropico_api.domain.admin import (
     AdminDisabled,
     AdminError,
+    ChunkPage,
+    ChunksQuery,
     Conflict,
+    CorrectionCreate,
+    CorrectionList,
+    CorrectionResult,
     DocumentList,
     InvalidInput,
     NotFound,
@@ -44,6 +49,7 @@ STATUS_BY_ERROR: dict[type[AdminError], int] = {
     StorageUnavailable: 503,
 }
 VersionId = Annotated[str, Path(min_length=1, max_length=64)]
+CorrectionId = Annotated[str, Path(min_length=1, max_length=64)]
 _bearer = HTTPBearer(auto_error=False)
 
 
@@ -247,5 +253,50 @@ def create_admin_router(service: AdminService, token: str | None) -> APIRouter:
     async def reprocess(version_id: VersionId) -> ReprocessResult:
         """Create or restart the ingestion Workflow of the version."""
         return await service.reprocess(version_id)
+
+    @router.get("/versions/{version_id}/chunks", response_model=ChunkPage)
+    async def list_chunks(
+        version_id: VersionId, page: Annotated[ChunksQuery, Query()]
+    ) -> ChunkPage:
+        """Page through the stored chunks to review the extracted text."""
+        return await service.list_chunks(version_id, page.offset, page.limit)
+
+    @router.get("/versions/{version_id}/corrections", response_model=CorrectionList)
+    async def list_corrections(version_id: VersionId) -> CorrectionList:
+        """List active and deleted text corrections."""
+        return await service.list_corrections(version_id)
+
+    @router.post(
+        "/versions/{version_id}/corrections",
+        status_code=201,
+        response_model=CorrectionResult,
+        openapi_extra={
+            "requestBody": {
+                "required": True,
+                "content": {
+                    "application/json": {"schema": CorrectionCreate.model_json_schema()}
+                },
+            }
+        },
+    )
+    async def create_correction(
+        request: Request, version_id: VersionId
+    ) -> CorrectionResult:
+        """Record a literal correction; the JSON body is parsed after auth."""
+        try:
+            body = CorrectionCreate.model_validate_json(await request.body())
+        except ValidationError as error:
+            raise _invalid(error) from None
+        return await service.create_correction(version_id, body)
+
+    @router.delete(
+        "/versions/{version_id}/corrections/{correction_id}",
+        response_model=CorrectionResult,
+    )
+    async def delete_correction(
+        version_id: VersionId, correction_id: CorrectionId
+    ) -> CorrectionResult:
+        """Logically delete a correction (kept for traceability)."""
+        return await service.delete_correction(version_id, correction_id)
 
     return router

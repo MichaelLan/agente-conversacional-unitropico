@@ -16,6 +16,8 @@ class Settings(BaseModel):
         "RAG_ANSWER_TIMEOUT_SECONDS": "rag_answer_timeout_seconds",
         "ADMIN_TOKEN": "admin_token",
         "ADMIN_MAX_UPLOAD_BYTES": "admin_max_upload_bytes",
+        "RATE_LIMIT_SALT": "rate_limit_salt",
+        "RATE_LIMIT_REQUIRED": "rate_limit_required",
     }
 
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
@@ -27,6 +29,11 @@ class Settings(BaseModel):
     admin_token: SecretStr | None = None
     # Ingestion rejects PDFs above 50 MB, so a larger upload could never be processed.
     admin_max_upload_bytes: int = Field(default=25 * 1024 * 1024, gt=0, le=50_000_000)
+
+    # Optional secret salting the hashed client key; absent/empty uses a default.
+    rate_limit_salt: SecretStr | None = None
+    # True: a missing or failing rate limiter answers 503 instead of letting through.
+    rate_limit_required: bool = False
 
     @classmethod
     def from_mapping(cls, env: Mapping[str, object]) -> Self:

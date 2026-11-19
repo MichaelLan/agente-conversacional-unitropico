@@ -27,8 +27,9 @@ según la arquitectura. Toda función y clase propia lleva docstring.
 ## Contrato y composición
 
 - `unitropico_api.main.create_app(*, settings=None, rag_client=None,
-  chat_client=None, documents=None, blobs=None, ingestion=None)` es la factory
-  ASGI; sin puertos admin, `/admin/*` responde 503 `storage_unavailable`. Sin `settings` usa
+  chat_client=None, documents=None, blobs=None, ingestion=None,
+  chat_limiter=None, retrieval_limiter=None)` es la factory
+  ASGI (sin limitadores no hay rate limiting, salvo `RATE_LIMIT_REQUIRED`); sin puertos admin, `/admin/*` responde 503 `storage_unavailable`. Sin `settings` usa
   `Settings.from_mapping(os.environ)`; el Worker pasa settings propios. Solo
   `main.py` y `worker.py` conocen `Settings`; servicios e infra reciben por
   constructor lo que necesitan. Se usa `src/` vía pythonpath de pytest.
@@ -41,7 +42,8 @@ según la arquitectura. Toda función y clase propia lleva docstring.
   fragmento: `document_id`, `document_title`, `version_id`, `version_label|null`,
   `chunk_id`, `source_sha256`, `page_start`, `page_end` (>= page_start),
   `section|null`, `text`. Sin binding/fallo: 503; payload inválido: 502
-  (ambos `{"status":"unavailable","evidence":[]}`).
+  (ambos `{"status":"unavailable","evidence":[]}`). 429 `rate_limited` y
+  413/411 como `/chat` (ver Rate limiting).
 - `POST /chat` (público), contrato v1 de `docs/IMPLEMENTATION_STATUS.md` sec. 4.
   Petición: `question` (1..500 code points tras strip), `history` opcional
   (máx. 6; `role` user|assistant, `content` 1..2000), campos extra prohibidos.
@@ -54,6 +56,14 @@ según la arquitectura. Toda función y clase propia lleva docstring.
     si no, un texto genérico en español sin datos de contacto.
   - 502: payload del RAG inválido (mismo cuerpo que 503).
   - 422: validación de la petición.
+  - 429 `{"error":{"code":"rate_limited","message":"Has realizado muchas
+    consultas seguidas. Espera un momento e inténtalo de nuevo."}}` con
+    `Retry-After: 60`. Ampliación del contrato v1 (que solo define
+    200/422/502/503): **el frontend debe tratarlo** mostrando el mensaje y sin
+    reintentar automáticamente antes de `Retry-After`.
+  - 413 `payload_too_large` (Content-Length > 64 KiB) / 411 `length_required`
+    (cuerpo chunked sin Content-Length), mismo sobre `{"error":...}`, decididos
+    en el Worker antes de leer el cuerpo.
   El historial no se persiste.
 
 ## Administración (`/admin`, contrato v1 de `docs/IMPLEMENTATION_STATUS.md` sec. 4b)
@@ -73,8 +83,8 @@ Orden: 503 `admin_disabled` (sin token) → 401 `unauthorized` (con
 FastAPI) → 411 `length_required` (falta `Content-Length`) → 413 `payload_too_large`
 (supera `ADMIN_MAX_UPLOAD_BYTES`). FastAPI repite auth y límite como defensa en
 profundidad. No verificado en workerd real (solo con dobles del SDK). El token nunca se
-registra en logs (`Settings.admin_token` es `SecretStr`). Sin cookies, sesión ni
-rate limiting (fuera de alcance).
+registra en logs (`Settings.admin_token` es `SecretStr`). Sin cookies ni sesión;
+las rutas admin no pasan por el rate limiting público (las protege el token).
 
 Errores: `{"error": {"code": "...", "message": "texto en español"}}`; también los
 422 de validación bajo `/admin` (las rutas públicas conservan el 422 de FastAPI).
@@ -88,6 +98,10 @@ Errores: `{"error": {"code": "...", "message": "texto en español"}}`; también 
 | `POST /admin/versions/{id}/publish` | `{document, version}` | 409 `invalid_status_transition`/`review_required`/`publish_without_chunks`/`chunk_page_out_of_range`/`publish_requirements_unmet` |
 | `POST /admin/versions/{id}/unpublish` | `{document, version}` | 409 si no está `published` |
 | `POST /admin/versions/{id}/reprocess` | `{document, version, ingestion}` | 409 `invalid_status_transition`/`ingestion_in_progress`, 503 `workflow_launch_failed` |
+| `GET /admin/versions/{id}/chunks?offset&limit` | `{version_id, status, total, offset, limit, chunks: [...]}` | 404 `version_not_found`, 422 `invalid_request` |
+| `GET /admin/versions/{id}/corrections` | `{version_id, corrections: [...]}` (activas y borradas) | 404 `version_not_found` |
+| `POST /admin/versions/{id}/corrections` | 201 `{correction, version_status, requires_review, reprocess_required, message}` | 404, 409 `version_published`/`duplicate_correction`/`too_many_corrections`, 422 `invalid_request`/`page_out_of_range` |
+| `DELETE /admin/versions/{id}/corrections/{cid}` | 200, mismo sobre que el POST | 404 `version_not_found`/`correction_not_found`, 409 `version_published` |
 
 Detalles:
 - **Upload**: cuerpo binario `application/pdf` (se aceptan parámetros de media
@@ -146,12 +160,62 @@ Detalles:
   (no se aplica ningún cambio). `supersedes_version_id` debe existir, ser del mismo
   documento (422 `supersedes_other_document`), distinto de sí misma y sin ciclos
   (409 `supersedes_cycle`).
-- **processing_events** (el esquema no tiene pasos propios para acciones admin):
+- **processing_events**:
   `upload` para alta (`source_stored`), lanzamientos (`workflow_*` o
   `failed/workflow_launch_failed`) y `reprocess_requested`; `review` para
-  `metadata_updated:<campos>`; `publish`/`unpublish`. Los eventos de transiciones
-  se insertan en el mismo `batch` que el UPDATE, condicionados a que este se
-  aplicara.
+  `metadata_updated:<campos>`; `correct` para `correction_created id=<cid>
+  page=<n>` y `correction_deleted id=<cid>` (la ingesta añade
+  `correction_applied id=<cid> page=<n>`); `publish`/`unpublish`. Los eventos de
+  transiciones se insertan en el mismo `batch` que el UPDATE, condicionados a que
+  este se aplicara.
+
+### Revisión y corrección del texto extraído
+
+Flujo: el Workflow deja la versión en `review_required` → el administrador lee
+los chunks → registra correcciones literales → **reprocesa** (reutiliza el OCR
+de R2, sin pagarlo otra vez; el paso `chunk` aplica las correcciones, ver
+`workers/ingestion/README.md`) → vuelve a leer los chunks → marca revisada →
+publica. Crear o borrar una corrección **nunca** lanza el reproceso.
+
+- **`GET /admin/versions/{id}/chunks`**: query `offset` (entero ≥ 0, por
+  defecto 0) y `limit` (1..100, por defecto 50); otros parámetros → 422.
+  Cualquier estado (también `published`); sin chunks devuelve `total: 0` y
+  `chunks: []`. Cada chunk:
+  `{ordinal, id, section|null, page_start, page_end, text, chunker_version|null}`
+  ordenados por `ordinal` (`chunker_version` es el de la versión).
+- **`GET /admin/versions/{id}/corrections`**: todas, por `created_at, id`. Cada
+  una: `{id, version_id, page_number, find_text, replace_text, reason,
+  created_at, deleted_at|null, active}` (`active = deleted_at is null`).
+- **`POST /admin/versions/{id}/corrections`**: JSON estricto
+  `{page_number, find_text, replace_text, reason}`, sin campos extra ni
+  coerción (`page_number` entero ≥ 1, no `"2"`, `2.0` ni `true`). `find_text`
+  1..500 caracteres tras recortar espacios; `replace_text` 0..500, se guarda tal
+  cual (vacío = borrar ruido) y debe ser distinto de `find_text`; `reason`
+  1..300 tras recortar. Sin caracteres de control salvo tabulador y saltos de
+  línea. `page_number > page_count` (si ya se conoce) → 422 `page_out_of_range`
+  (el esquema lo vuelve a comprobar). Versión `published` → 409
+  `version_published` (despublicar primero; también lo impone un trigger). Una
+  corrección activa con la misma página y el mismo `find_text` → 409
+  `duplicate_correction`. Máximo 100 activas por versión → 409
+  `too_many_corrections`. Id `cor_<uuid hex>`. Inserta la fila, un evento
+  `correct` y, en el mismo `batch`, pone `requires_review = 1` y pasa
+  `ready`/`unpublished` → `review_required`: con una corrección pendiente la
+  versión no puede publicarse sin una nueva revisión (decisión añadida al
+  diseño para no publicar por descuido un texto sin corregir). Respuesta 201:
+  `{"correction": {...}, "version_status": "review_required",
+  "requires_review": true, "reprocess_required": true, "message": "El cambio se
+  aplicará cuando se reprocese la versión ..."}`.
+- **`DELETE /admin/versions/{id}/corrections/{cid}`**: borrado lógico
+  (`deleted_at`), idempotente: repetirlo devuelve 200 con la misma corrección sin
+  nuevo evento ni cambio de estado. La primera vez registra `correct`
+  (`correction_deleted`) y aplica la misma regla de revisión que el POST. `cid`
+  de otra versión o inexistente → 404 `correction_not_found`; versión
+  `published` → 409 `version_published`. Las filas nunca se borran físicamente.
+- La aplicación (coincidencia exacta una vez, normalización de espacios) la hace
+  la ingesta: si una corrección no aplica, el reproceso deja la versión en
+  `failed` con `error_code = correction_not_applicable` y `error_detail =
+  "step=chunk correction=<cid> page=<n> matches=<k>"` (visible en
+  `GET /admin/versions/{id}`); se borra o se rehace la corrección y se reprocesa.
 
 **Capas**: `domain/admin.py` (DTOs Pydantic, errores, ids), `services/admin.py`
 (`AdminService` y los puertos `DocumentRepository`, `BlobStore`,
@@ -170,6 +234,8 @@ Detalles:
 | `RAG_ANSWER_TIMEOUT_SECONDS` | `45` | Timeout de `/chat`: cubre retrieval + LLM |
 | `ADMIN_TOKEN` | sin valor | **Secret** de Wrangler; sin él `/admin/*` responde 503 |
 | `ADMIN_MAX_UPLOAD_BYTES` | `26214400` | Límite del PDF subido (≤ 50 MB: la ingesta rechaza PDFs mayores) |
+| `RATE_LIMIT_SALT` | `unitropico-rate-limit-v1` | **Secret** opcional: salt del hash de la IP usado como clave del limitador |
+| `RATE_LIMIT_REQUIRED` | `false` | `true`: limitador ausente o fallido → 503 (fail-closed) en vez de dejar pasar |
 
 El secret se crea con `wrangler secret put ADMIN_TOKEN` (no ejecutado; requiere
 login y el Worker desplegado). Para desarrollo local, en `.dev.vars` (ignorado
@@ -179,12 +245,115 @@ Bindings (`wrangler.jsonc`): `RAG` (service binding), `DB` (D1 `unitropico`,
 `migrations_dir: ../../infra/d1/migrations`; **`database_id` es un placeholder**
 `REPLACE_WITH_D1_DATABASE_ID` hasta crear la base), `DOCUMENTS` (R2
 `unitropico-documents`) e `INGESTION` (Workflow `ingestion`, clase
-`IngestionWorkflow`, script `unitropico-ingestion`). Claves verificadas contra
-`config-schema.json` de Wrangler 4.165.0 (cache npx local).
+`IngestionWorkflow`, script `unitropico-ingestion`), `CHAT_LIMITER` y
+`RETRIEVAL_LIMITER` (Rate Limiting, ver abajo). Claves verificadas contra
+`config-schema.json` de Wrangler 4.165.0 (cache npx local; el archivo valida
+con `jsonschema` contra ese esquema).
 
 Logging: el logger `unitropico_api` registra fallos de upstream con ruta y tipo
 de error/estado (`route=answer reason=TimeoutError`), nunca la pregunta, el
 historial, el cuerpo ni textos de evidencia.
+
+## Rate limiting de rutas públicas
+
+Contexto: chat público sin autenticación (~100 consultas/día, ~10 usuarios
+simultáneos) y cada `/chat` cuesta una llamada al LLM (ARQUITECTURA.md §6).
+
+| Binding | Ruta | Cuota por defecto | `namespace_id` |
+| --- | --- | --- | --- |
+| `CHAT_LIMITER` | `POST /chat` | 10 peticiones / 60 s por cliente | `"1001"` |
+| `RETRIEVAL_LIMITER` | `POST /retrieval/query` | 30 peticiones / 60 s por cliente | `"1002"` |
+
+**Cambiar la cuota**: editar `ratelimits[].simple` en `wrangler.jsonc`
+(`limit` entero; `period` solo admite **10 o 60** segundos según el esquema de
+Wrangler 4.165.0 y la documentación) y redesplegar; el código no conoce los
+valores. `namespace_id` es una cadena con un entero positivo **único en la
+cuenta** (dos bindings con el mismo id comparten contadores, incluso entre
+Workers): revisar que `1001`/`1002` no estén en uso antes de desplegar.
+`Retry-After` es fijo a 60 (el periodo máximo); si se usa `period: 10` sigue
+siendo una cota superior válida.
+
+**Diseño** (capas como el resto del API):
+- `services/rate_limit.py`: puerto `RateLimiter` (`Protocol`, `async allow(key) -> bool`,
+  lanza `RateLimiterUnavailable`), `client_key` y `RateLimitGuard` (política
+  fail-open/fail-closed; recibe salt y flag como valores, no `Settings`).
+- `infra/rate_limit.py`: `WorkersRateLimiter(provider)` llama
+  `await binding.limit(key=...)` (el wrapper del SDK 1.9.6 convierte los kwargs
+  en el objeto de opciones `{key}` y el resultado `{success}` a dict; también se
+  acepta acceso por atributo). Sin binding → `BindingMissing`; excepción del
+  binding → nombre del tipo; `success` no booleano → `InvalidResult`.
+- `api/rate_limit.py`: dependencia FastAPI añadida a las dos rutas, manejador del
+  429 y chequeo temprano de tamaño. `main.py` compone; `worker.py` pasa
+  `WorkersRateLimiter(lambda: request_binding("CHAT_LIMITER" | "RETRIEVAL_LIMITER"))`.
+- El límite se evalúa como dependencia de la ruta: antes del servicio y por tanto
+  **antes de llamar al RAG/LLM** (también antes de la validación del cuerpo: un
+  cliente sobre la cuota recibe 429 aunque el JSON sea inválido). Las rutas
+  `/admin/*`, `/health` y `/docs` no se limitan.
+
+**Clave del cliente**: `CF-Connecting-IP` (la pone Cloudflare con la IP del
+cliente) → `HMAC-SHA256(salt, ip)` truncado a 32 hex; el salt es el secret
+`RATE_LIMIT_SALT` o, si falta/está vacío, el valor por defecto documentado
+`unitropico-rate-limit-v1` (no es secreto: solo evita pasar IPs en claro al
+limitador). Sin cabecera (desarrollo local) la clave es `anonymous` (todos
+comparten cuota). La IP y la clave **nunca se registran**: los logs son
+`rate limited route=chat` (INFO) y `rate limiter unavailable route=... reason=...
+fail=open|closed` (WARNING). Limitaciones conocidas: Cloudflare desaconseja
+claves por IP porque NAT/redes móviles/proxys comparten IP (un campus detrás de
+una sola IP compartiría cuota; subir `limit` si ocurre); a falta de cuentas de
+usuario es el único identificador estable disponible.
+
+**Proxy desde la web**: si `apps/web` reenvía la petición por service binding,
+debe **preservar `CF-Connecting-IP`** (reenviar el `Request` original o copiar
+la cabecera). Si no, todas las peticiones compartirían una clave (`anonymous` o
+la IP del Worker: en subrequests entre zonas Cloudflare la sustituye por
+`2a06:98c0:3600::103`). Con `workers_dev: false` y sin ruta pública el API solo
+es alcanzable por service binding, así que la cabecera la controla la web.
+
+**Fallo del limitador**: por defecto **fail-open** con WARNING (un fallo o la
+ausencia del binding no debe tumbar el chat; el coste queda acotado por el bajo
+tráfico y el timeout del RAG). Con `RATE_LIMIT_REQUIRED=true`, **fail-closed**:
+503 con el cuerpo propio de cada ruta (`/chat`: `{"status":"unavailable",
+"referral":...}`; `/retrieval/query`: `{"status":"unavailable","evidence":[]}`),
+sin llamar al RAG. Ese flag también cierra las rutas si `create_app` se compone
+sin limitadores.
+
+**Tamaño del cuerpo**: `ChatRequest` ya limita `question` ≤ 500 y `history`
+≤ 6 × 2000 code points, pero esa validación ocurre después de que el puente
+ASGI haya leído todo el cuerpo. Por eso `Default.fetch` aplica
+`early_public_body_rejection` junto a `early_upload_rejection`: `POST /chat` y
+`POST /retrieval/query` con `Content-Length` > 64 KiB → 413; sin
+`Content-Length` (o inválido) con `Transfer-Encoding: chunked` → 411. Sin
+ninguna de las dos cabeceras se deja pasar (cuerpo vacío → 422). 64 KiB cubre un
+historial máximo en UTF-8 (~50 KB en el peor caso); un cliente que escape todo a
+`\uXXXX` con emojis podría superarlo, caso que se acepta.
+
+**Semántica del binding** (documentación oficial): el límite es **por
+ubicación** de Cloudflare (cada PoP cuenta por separado), los contadores son
+**eventualmente consistentes** y la cuota es **aproximada** (puede superarse
+mientras se sincroniza); un límite estricto global requeriría Durable Objects.
+Una petición rechazada no incrementa el contador. El binding no aparece en el
+dashboard: observar los 429 en Workers Logs. Estado: estable (GA) desde
+2025-09-19. En `wrangler dev --local`, Miniflare de Wrangler 4.165.0 incluye una
+emulación (`miniflare/dist/src/workers/ratelimit/`, contador por ventana fija en
+un Durable Object local; valida que las opciones solo sean
+`key|limit|period|delta` y `period` ∈ {10, 60}), leída en el código de la cache
+npx, **no ejecutada**.
+
+Fuentes consultadas:
+- https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/
+- https://developers.cloudflare.com/changelog/2025-09-19-ratelimit-workers-ga/
+- https://developers.cloudflare.com/fundamentals/reference/http-headers/
+  (`CF-Connecting-IP` y su valor en subrequests de Workers)
+- `config-schema.json` de Wrangler 4.165.0 (`ratelimits`: `name`,
+  `namespace_id`, `simple.{limit, period ∈ {10, 60}}`, sin propiedades extra) y
+  `workers/rpc.py` del SDK 1.9.6 (`Ratelimit` está en `_EnvWrapper._BINDING_TYPES`,
+  se envuelve con `_BindingWrapper`).
+
+**No verificado**: el binding real en Cloudflare y en `pywrangler dev --local`
+(solo dobles en CPython), la conversión real de `limit(key=...)` en Pyodide, la
+disponibilidad/precio por plan (la documentación no lo indica), que el puente
+ASGI no lea el cuerpo cuando el Worker responde antes, y la presencia de
+`CF-Connecting-IP` al llegar por service binding desde la web.
 
 ## Workers
 
@@ -199,8 +368,8 @@ en `scope["env"]`; el middleware lo expone en un `ContextVar` y
 (503) si el binding falta. Solo este bridge importa el SDK.
 
 `wrangler.jsonc` conserva `2026-11-08`, `python_workers`, `workers_dev: false` y
-`services: [{"binding":"RAG","service":"unitropico-rag-poc"}]`, y añade D1, R2 y
-Workflow (ver Configuración). Es JSON sin comentarios (lo lee un test). No despliega.
+`services: [{"binding":"RAG","service":"unitropico-rag"}]`, y añade D1, R2 y
+Workflow y los dos `ratelimits` (ver Configuración). Es JSON sin comentarios (lo lee un test). No despliega.
 
 `RagServiceBindingClient(binding, *, base_url, retrieval_timeout, answer_timeout)`
 hace un único `await binding.fetch` (POST JSON) por llamada, sin retries ni HTTPX.
@@ -238,7 +407,7 @@ WRANGLER_SEND_METRICS=false uvx --from uv==0.13.7 uv run pywrangler dev --local 
 
 El último comando histórico mantiene un servidor: no se ejecutó para este
 transporte. Para una futura prueba API→RAG, el operador deberá disponer de ambos
-Workers en desarrollo local y enlazar el nombre exacto `unitropico-rag-poc`.
+Workers en desarrollo local y enlazar el nombre exacto `unitropico-rag`.
 Usar únicamente Wrangler ya disponible en cache y modo local; el wrapper
 pywrangler sincroniza dependencias e invoca `npx --yes`, así que no garantiza
 una ejecución offline. No se verificó aquí un comando de arranque multiworker.

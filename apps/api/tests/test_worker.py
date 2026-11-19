@@ -103,15 +103,15 @@ def test_settings_come_from_env_mapping(worker):
 
 
 def test_local_worker_configuration() -> None:
-    """Fix compatibility, the RAG service and the admin storage bindings."""
+    """Fix compatibility, the RAG service, admin storage and rate limit bindings."""
     config = json.loads((ROOT / "wrangler.jsonc").read_text())
     assert config == {
-        "name": "unitropico-api-local",
+        "name": "unitropico-api",
         "main": "src/worker.py",
         "compatibility_date": "2026-11-08",
         "compatibility_flags": ["python_workers"],
         "workers_dev": False,
-        "services": [{"binding": "RAG", "service": "unitropico-rag-poc"}],
+        "services": [{"binding": "RAG", "service": "unitropico-rag"}],
         "d1_databases": [
             {
                 "binding": "DB",
@@ -128,6 +128,18 @@ def test_local_worker_configuration() -> None:
                 "class_name": "IngestionWorkflow",
                 "script_name": "unitropico-ingestion",
             }
+        ],
+        "ratelimits": [
+            {
+                "name": "CHAT_LIMITER",
+                "namespace_id": "1001",
+                "simple": {"limit": 10, "period": 60},
+            },
+            {
+                "name": "RETRIEVAL_LIMITER",
+                "namespace_id": "1002",
+                "simple": {"limit": 30, "period": 60},
+            },
         ],
     }
     migrations = ROOT / config["d1_databases"][0]["migrations_dir"]
@@ -206,3 +218,74 @@ def test_worker_lets_valid_and_other_requests_reach_fastapi(worker):
     other = Incoming("/chat", {"question": "x"})
     assert asyncio.run(entry(worker, **env).fetch(other)) == (503, DEFAULT_503)
     assert len(worker.sdk.calls) == 2
+
+
+class Ratelimit:
+    """Fake Rate Limiting binding: denies after `quota` calls, records options."""
+
+    def __init__(self, quota):
+        """Start the counter."""
+        self.quota, self.calls = quota, []
+
+    async def limit(self, **options):
+        """Record the options and report success while under the quota."""
+        self.calls.append(options)
+        return {"success": len(self.calls) <= self.quota}
+
+
+def test_worker_wires_rate_limit_bindings(worker):
+    """CHAT_LIMITER / RETRIEVAL_LIMITER are resolved per request from the env."""
+    rag, chat_limiter, retrieval_limiter = (
+        Binding(200, ANSWERED),
+        Ratelimit(1),
+        Ratelimit(0),
+    )
+    env = {
+        "RAG": rag,
+        "CHAT_LIMITER": chat_limiter,
+        "RETRIEVAL_LIMITER": retrieval_limiter,
+    }
+    chat = Incoming("/chat", {"question": "x"})
+    assert asyncio.run(entry(worker, **env).fetch(chat)) == (200, ANSWERED)
+    status, body = asyncio.run(entry(worker, **env).fetch(chat))
+    assert (status, body["error"]["code"]) == (429, "rate_limited")
+    query = Incoming("/retrieval/query", {"question": "x"})
+    assert asyncio.run(entry(worker, **env).fetch(query))[0] == 429
+    assert len(rag.calls) == 1
+    # The fake ASGI bridge sends no CF-Connecting-IP, so the key is anonymous.
+    assert chat_limiter.calls == [{"key": "anonymous"}] * 2
+    assert retrieval_limiter.calls == [{"key": "anonymous"}]
+
+
+def test_worker_fails_open_without_rate_limit_bindings(worker):
+    """Without limiter bindings the chat still answers (fail-open)."""
+    rag = Binding(200, ANSWERED)
+    chat = Incoming("/chat", {"question": "x"})
+    assert asyncio.run(entry(worker, RAG=rag).fetch(chat)) == (200, ANSWERED)
+
+
+def test_worker_fails_closed_when_rate_limit_required(worker):
+    """RATE_LIMIT_REQUIRED=true without bindings answers 503 before RAG."""
+    rag = Binding(200, ANSWERED)
+    chat = Incoming("/chat", {"question": "x"})
+    instance = entry(worker, RAG=rag, RATE_LIMIT_REQUIRED="true")
+    assert asyncio.run(instance.fetch(chat)) == (503, DEFAULT_503)
+    assert rag.calls == []
+
+
+@pytest.mark.parametrize("path", ["/chat", "/retrieval/query"])
+def test_worker_rejects_large_public_bodies_before_the_asgi_bridge(worker, path):
+    """413 over 64 KiB and 411 for chunked bodies, decided from headers alone."""
+    rag = Binding(200, ANSWERED)
+    big = Incoming(path, {}, headers={"content-length": str(64 * 1024 + 1)})
+    chunked = Incoming(path, {}, headers={"transfer-encoding": "chunked"})
+    for incoming, status, code in [
+        (big, 413, "payload_too_large"),
+        (chunked, 411, "length_required"),
+    ]:
+        response = asyncio.run(entry(worker, RAG=rag).fetch(incoming))
+        assert (response.status, response.body["error"]["code"]) == (status, code)
+    assert worker.sdk.calls == [] and rag.calls == []
+    ok = Incoming(path, {"question": "x"}, headers={"content-length": "20"})
+    asyncio.run(entry(worker, RAG=rag).fetch(ok))
+    assert len(worker.sdk.calls) == 1

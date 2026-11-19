@@ -2,6 +2,7 @@
 
 import hashlib
 import re
+import unicodedata
 from dataclasses import dataclass
 from datetime import date
 from enum import StrEnum
@@ -11,12 +12,20 @@ from pydantic import (
     AfterValidator,
     BaseModel,
     ConfigDict,
+    Field,
     StringConstraints,
     model_validator,
 )
 
 PDF_MAGIC = b"%PDF-"
 DEFAULT_MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+MAX_CHUNKS_PAGE = 100
+DEFAULT_CHUNKS_PAGE = 50
+MAX_ACTIVE_CORRECTIONS = 100
+"""Active corrections per version (each one is one event in the chunk step)."""
+MAX_FIND_TEXT = 500
+MAX_REPLACE_TEXT = 500
+MAX_REASON = 300
 
 VersionStatus = Literal[
     "uploaded",
@@ -147,6 +156,57 @@ class VersionPatch(BaseModel):
         return self
 
 
+class ChunksQuery(BaseModel):
+    """Query parameters of GET /admin/versions/{id}/chunks."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    offset: Annotated[int, Field(ge=0, le=1_000_000)] = 0
+    limit: Annotated[int, Field(ge=1, le=MAX_CHUNKS_PAGE)] = DEFAULT_CHUNKS_PAGE
+
+
+def _no_control_chars(value: str) -> str:
+    """Reject control characters other than tab and line breaks."""
+    if any(unicodedata.category(ch) == "Cc" and ch not in "\t\n\r" for ch in value):
+        raise ValueError("no se admiten caracteres de control")
+    return value
+
+
+FindText = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_FIND_TEXT),
+    AfterValidator(_no_control_chars),
+]
+ReplaceText = Annotated[
+    str,
+    StringConstraints(max_length=MAX_REPLACE_TEXT),
+    AfterValidator(_no_control_chars),
+]
+Reason = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_REASON),
+    AfterValidator(_no_control_chars),
+]
+
+
+class CorrectionCreate(BaseModel):
+    """Body of POST /admin/versions/{id}/corrections (literal OCR correction)."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    page_number: Annotated[int, Field(ge=1)]
+    find_text: FindText
+    replace_text: ReplaceText
+    reason: Reason
+
+    @model_validator(mode="after")
+    def _check(self) -> Self:
+        """A correction must change the text."""
+        if self.find_text == self.replace_text:
+            raise ValueError("replace_text debe ser distinto de find_text")
+        return self
+
+
 class DocumentSummary(BaseModel):
     """Logical document fields shown in the admin panel."""
 
@@ -244,6 +304,79 @@ class ReprocessResult(VersionView):
     """Response of POST /admin/versions/{id}/reprocess."""
 
     ingestion: IngestionOutcome
+
+
+class ChunkReview(BaseModel):
+    """One stored chunk, as shown to the administrator for review."""
+
+    ordinal: int
+    id: str
+    section: str | None
+    page_start: int
+    page_end: int
+    text: str
+    chunker_version: str | None
+
+
+class ChunkPage(BaseModel):
+    """Response of GET /admin/versions/{id}/chunks."""
+
+    version_id: str
+    status: VersionStatus
+    total: int
+    offset: int
+    limit: int
+    chunks: list[ChunkReview]
+
+
+class TextCorrectionView(BaseModel):
+    """A recorded correction; deleted ones are kept for traceability."""
+
+    id: str
+    version_id: str
+    page_number: int
+    find_text: str
+    replace_text: str
+    reason: str
+    created_at: str
+    deleted_at: str | None
+    active: bool
+
+
+class CorrectionList(BaseModel):
+    """Response of GET /admin/versions/{id}/corrections."""
+
+    version_id: str
+    corrections: list[TextCorrectionView]
+
+
+REPROCESS_NOTICE = (
+    "El cambio se aplicará cuando se reprocese la versión "
+    "(POST /admin/versions/{id}/reprocess); no se reprocesa automáticamente. "
+    "La versión vuelve a requerir revisión."
+)
+
+
+class CorrectionResult(BaseModel):
+    """Response of POST/DELETE on corrections: never triggers a reprocess."""
+
+    correction: TextCorrectionView
+    version_status: VersionStatus
+    requires_review: bool
+    reprocess_required: bool = True
+    message: str = REPROCESS_NOTICE
+
+
+@dataclass(frozen=True, slots=True)
+class NewCorrection:
+    """Validated correction ready to be stored."""
+
+    id: str
+    version_id: str
+    page_number: int
+    find_text: str
+    replace_text: str
+    reason: str
 
 
 @dataclass(frozen=True, slots=True)

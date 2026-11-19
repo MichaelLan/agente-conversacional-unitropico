@@ -6,14 +6,18 @@ from unitropico_api.core.logger import get_logger
 from unitropico_api.domain.admin import (
     REPROCESSABLE,
     AdminError,
+    ChunkReview,
     Conflict,
     DocumentList,
     DocumentSummary,
     DocumentWithVersions,
+    InvalidInput,
+    NewCorrection,
     NewVersion,
     NotFound,
     ProcessingEvent,
     StorageUnavailable,
+    TextCorrectionView,
     VersionSummary,
     VersionView,
 )
@@ -92,7 +96,60 @@ TRIGGER_CONFLICTS = {
     "publish_without_chunks": "La versión no tiene fragmentos indexados.",
     "chunk_page_out_of_range": "Hay fragmentos fuera del rango de páginas.",
     "published_version_immutable": "La versión publicada no puede modificarse.",
+    "correction_page_out_of_range": "La página supera el número de páginas.",
+    "text_correction_immutable": "Las correcciones no pueden editarse.",
 }
+# Same statements as infra/d1/queries.sql (chunks_page_by_version,
+# count_chunks_by_version, corrections_by_version, insert_correction,
+# soft_delete_correction); a test keeps them identical.
+CHUNKS_PAGE = (
+    "SELECT c.ordinal, c.id, c.section, c.page_start, c.page_end, c.text, "
+    "v.chunker_version FROM chunks c "
+    "JOIN document_versions v ON v.id = c.version_id "
+    "WHERE c.version_id = ?1 ORDER BY c.ordinal LIMIT ?2 OFFSET ?3"
+)
+COUNT_CHUNKS = "SELECT count(*) AS total FROM chunks WHERE version_id = ?1"
+CORRECTIONS = (
+    "SELECT id, version_id, page_number, find_text, replace_text, reason, "
+    "created_at, deleted_at FROM text_corrections WHERE version_id = ?1 "
+    "ORDER BY created_at, id"
+)
+CORRECTION_BY_ID = (
+    "SELECT id, version_id, page_number, find_text, replace_text, reason, "
+    "created_at, deleted_at FROM text_corrections WHERE version_id = ?1 AND id = ?2"
+)
+INSERT_CORRECTION = (
+    "INSERT INTO text_corrections (id, version_id, page_number, find_text, "
+    "replace_text, reason) VALUES (?1, ?2, ?3, ?4, ?5, ?6)"
+)
+SOFT_DELETE_CORRECTION = (
+    "UPDATE text_corrections SET deleted_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') "
+    "WHERE id = ?1 AND version_id = ?2 AND deleted_at IS NULL RETURNING id"
+)
+# Logs the deletion only while the correction is still active; it runs before
+# SOFT_DELETE_CORRECTION in the same batch.
+LOG_DELETION_IF_ACTIVE = (
+    "INSERT INTO processing_events (version_id, step, status, detail) "
+    "SELECT ?2, 'correct', 'succeeded', 'correction_deleted id=' || ?1 "
+    "WHERE EXISTS (SELECT 1 FROM text_corrections "
+    "WHERE id = ?1 AND version_id = ?2 AND deleted_at IS NULL)"
+)
+# A pending correction invalidates the review: ready/unpublished go back to
+# review_required so the version cannot be published before a new review
+# (normally after reprocessing). ?2 = correction id that must still be active
+# (deletion) or NULL (creation, already inserted in the same batch).
+REQUIRE_REVIEW_FOR_CORRECTION = (
+    "UPDATE document_versions SET requires_review = 1, "
+    "status = CASE WHEN status IN ('ready', 'unpublished') "
+    "THEN 'review_required' ELSE status END "
+    "WHERE id = ?1 AND status <> 'published' AND (?2 IS NULL OR EXISTS "
+    "(SELECT 1 FROM text_corrections WHERE id = ?2 AND version_id = ?1 "
+    "AND deleted_at IS NULL))"
+)
+VERSION_PUBLISHED = (
+    "version_published",
+    "La versión está publicada: despublíquela antes de corregir su texto.",
+)
 UNIQUE_CONFLICTS = {
     "version_label": (
         "version_label_taken",
@@ -139,6 +196,22 @@ def translate_error(
     return StorageUnavailable(
         "storage_unavailable", "El catálogo no está disponible en este momento."
     )
+
+
+def _correction(row: Mapping[str, Any]) -> TextCorrectionView:
+    """Build a TextCorrectionView from a CORRECTIONS row."""
+    return TextCorrectionView(**row, active=row["deleted_at"] is None)
+
+
+def _correction_error(error: AdminError) -> AdminError:
+    """Translate schema guards of text_corrections to the admin contract."""
+    if error.code == "published_version_immutable":
+        return Conflict(*VERSION_PUBLISHED)
+    if error.code == "correction_page_out_of_range":
+        return InvalidInput(
+            "page_out_of_range", "La página supera el número de páginas del documento."
+        )
+    return error
 
 
 def _view(row: Mapping[str, Any]) -> VersionView:
@@ -455,6 +528,87 @@ class D1DocumentRepository:
     ) -> None:
         """Append one processing event."""
         await self._all(LOG_EVENT, version_id, step, status, error_code, detail)
+
+    async def list_chunks(
+        self, version_id: str, offset: int, limit: int
+    ) -> tuple[int, list[ChunkReview]]:
+        """Return the chunk total and one page of chunks ordered by ordinal."""
+        counted, rows = await self._batch(
+            [
+                self._stmt(COUNT_CHUNKS, version_id),
+                self._stmt(CHUNKS_PAGE, version_id, limit, offset),
+            ]
+        )
+        total = int(counted[0]["total"]) if counted else 0
+        return total, [ChunkReview.model_validate(row) for row in rows]
+
+    async def list_corrections(self, version_id: str) -> list[TextCorrectionView]:
+        """Return every correction of a version, oldest first."""
+        rows = await self._all(CORRECTIONS, version_id)
+        return [_correction(row) for row in rows]
+
+    async def get_correction(
+        self, version_id: str, correction_id: str
+    ) -> TextCorrectionView | None:
+        """Return one correction of the version, or None."""
+        rows = await self._all(CORRECTION_BY_ID, version_id, correction_id)
+        return _correction(rows[0]) if rows else None
+
+    async def create_correction(self, new: NewCorrection) -> TextCorrectionView:
+        """Store a correction and its creation event atomically."""
+        try:
+            await self._batch(
+                [
+                    self._stmt(
+                        INSERT_CORRECTION,
+                        new.id,
+                        new.version_id,
+                        new.page_number,
+                        new.find_text,
+                        new.replace_text,
+                        new.reason,
+                    ),
+                    self._stmt(REQUIRE_REVIEW_FOR_CORRECTION, new.version_id, None),
+                    self._stmt(
+                        LOG_EVENT,
+                        new.version_id,
+                        "correct",
+                        "succeeded",
+                        None,
+                        f"correction_created id={new.id} page={new.page_number}",
+                    ),
+                ],
+                check_code="invalid_correction",
+            )
+        except AdminError as error:
+            raise _correction_error(error) from None
+        created = await self.get_correction(new.version_id, new.id)
+        if created is None:
+            raise StorageUnavailable(
+                "storage_unavailable", "No se pudo registrar la corrección."
+            )
+        return created
+
+    async def delete_correction(
+        self, version_id: str, correction_id: str
+    ) -> TextCorrectionView:
+        """Logically delete a correction (idempotent) and log it once."""
+        try:
+            await self._batch(
+                [
+                    self._stmt(LOG_DELETION_IF_ACTIVE, correction_id, version_id),
+                    self._stmt(
+                        REQUIRE_REVIEW_FOR_CORRECTION, version_id, correction_id
+                    ),
+                    self._stmt(SOFT_DELETE_CORRECTION, correction_id, version_id),
+                ]
+            )
+        except AdminError as error:
+            raise _correction_error(error) from None
+        current = await self.get_correction(version_id, correction_id)
+        if current is None:
+            raise NotFound("correction_not_found", "La corrección no existe.")
+        return current
 
     async def _after_guarded_update(
         self, version_id: str, returned: list[dict[str, Any]], conflict: AdminError

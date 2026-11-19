@@ -96,6 +96,10 @@ ROUTES = [
     ("POST", "/admin/versions/v1/publish"),
     ("POST", "/admin/versions/v1/unpublish"),
     ("POST", "/admin/versions/v1/reprocess"),
+    ("GET", "/admin/versions/v1/chunks"),
+    ("GET", "/admin/versions/v1/corrections"),
+    ("POST", "/admin/versions/v1/corrections"),
+    ("DELETE", "/admin/versions/v1/corrections/cor_1"),
 ]
 
 
@@ -448,6 +452,9 @@ def test_version_detail(admin):
         ("POST", "/publish"),
         ("POST", "/unpublish"),
         ("POST", "/reprocess"),
+        ("GET", "/chunks"),
+        ("GET", "/corrections"),
+        ("DELETE", "/corrections/cor_1"),
     ],
 )
 def test_unknown_version_is_404(admin, method, suffix):

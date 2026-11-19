@@ -6,23 +6,31 @@ from unitropico_api.core.logger import get_logger
 from unitropico_api.domain.admin import (
     ACTIVE_WORKFLOW_STATUSES,
     DEFAULT_MAX_UPLOAD_BYTES,
+    MAX_ACTIVE_CORRECTIONS,
     PDF_MAGIC,
     PUBLISHABLE,
     REPROCESSABLE,
     REVIEWABLE,
+    ChunkPage,
+    ChunkReview,
     Conflict,
+    CorrectionCreate,
+    CorrectionList,
+    CorrectionResult,
     DocumentList,
     DocumentSummary,
     IngestionLaunchError,
     IngestionOutcome,
     IngestionRequest,
     InvalidInput,
+    NewCorrection,
     NewVersion,
     NotFound,
     PayloadTooLarge,
     ProcessingEvent,
     ReprocessResult,
     StorageUnavailable,
+    TextCorrectionView,
     UploadMetadata,
     UploadResult,
     VersionDetail,
@@ -104,6 +112,26 @@ class DocumentRepository(Protocol):
         detail: str | None = None,
     ) -> None:
         """Append one processing event."""
+        ...
+
+    async def list_chunks(
+        self, version_id: str, offset: int, limit: int
+    ) -> tuple[int, list[ChunkReview]]:
+        """Return the chunk total and one page of chunks ordered by ordinal."""
+        ...
+
+    async def list_corrections(self, version_id: str) -> list[TextCorrectionView]:
+        """Return every correction (active and deleted) of a version."""
+        ...
+
+    async def create_correction(self, new: NewCorrection) -> TextCorrectionView:
+        """Store a correction, require a new review and log it (not if published)."""
+        ...
+
+    async def delete_correction(
+        self, version_id: str, correction_id: str
+    ) -> TextCorrectionView:
+        """Logically delete a correction (idempotent); NotFound if unknown."""
         ...
 
 
@@ -382,6 +410,109 @@ class AdminService:
                 "No se pudo iniciar el procesamiento; inténtelo de nuevo.",
             )
         return ReprocessResult(**view.model_dump(), ingestion=outcome)
+
+    async def list_chunks(self, version_id: str, offset: int, limit: int) -> ChunkPage:
+        """Return stored chunks of a version for text review, in any status."""
+        documents, _, _ = self._ports()
+        current = (await self._require(documents, version_id)).version
+        total, chunks = await documents.list_chunks(version_id, offset, limit)
+        return ChunkPage(
+            version_id=version_id,
+            status=current.status,
+            total=total,
+            offset=offset,
+            limit=limit,
+            chunks=chunks,
+        )
+
+    async def list_corrections(self, version_id: str) -> CorrectionList:
+        """Return active and deleted corrections of a version."""
+        documents, _, _ = self._ports()
+        await self._require(documents, version_id)
+        corrections = await documents.list_corrections(version_id)
+        return CorrectionList(version_id=version_id, corrections=corrections)
+
+    async def create_correction(
+        self, version_id: str, body: CorrectionCreate
+    ) -> CorrectionResult:
+        """Record a literal correction; it applies on the next reprocess only."""
+        documents, _, _ = self._ports()
+        current = (await self._require(documents, version_id)).version
+        self._ensure_editable(current.status)
+        if current.page_count is not None and body.page_number > current.page_count:
+            raise InvalidInput(
+                "page_out_of_range",
+                f"La versión tiene {current.page_count} páginas.",
+            )
+        active = [c for c in await documents.list_corrections(version_id) if c.active]
+        if len(active) >= MAX_ACTIVE_CORRECTIONS:
+            raise Conflict(
+                "too_many_corrections",
+                f"La versión ya tiene {MAX_ACTIVE_CORRECTIONS} correcciones activas.",
+            )
+        if any(
+            c.page_number == body.page_number and c.find_text == body.find_text
+            for c in active
+        ):
+            raise Conflict(
+                "duplicate_correction",
+                "Ya existe una corrección activa para ese texto en esa página.",
+            )
+        created = await documents.create_correction(
+            NewCorrection(
+                id=f"cor_{uuid.uuid4().hex}",
+                version_id=version_id,
+                page_number=body.page_number,
+                find_text=body.find_text,
+                replace_text=body.replace_text,
+                reason=body.reason,
+            )
+        )
+        _log.info(
+            "admin correction created version=%s correction=%s page=%s",
+            version_id,
+            created.id,
+            created.page_number,
+        )
+        return await self._correction_result(documents, version_id, created)
+
+    async def delete_correction(
+        self, version_id: str, correction_id: str
+    ) -> CorrectionResult:
+        """Logically delete a correction; it stops applying on the next reprocess."""
+        documents, _, _ = self._ports()
+        current = (await self._require(documents, version_id)).version
+        self._ensure_editable(current.status)
+        deleted = await documents.delete_correction(version_id, correction_id)
+        _log.info(
+            "admin correction deleted version=%s correction=%s",
+            version_id,
+            correction_id,
+        )
+        return await self._correction_result(documents, version_id, deleted)
+
+    async def _correction_result(
+        self,
+        documents: DocumentRepository,
+        version_id: str,
+        correction: TextCorrectionView,
+    ) -> CorrectionResult:
+        """Attach the version state left by the change (review is required)."""
+        version = (await self._require(documents, version_id)).version
+        return CorrectionResult(
+            correction=correction,
+            version_status=version.status,
+            requires_review=version.requires_review,
+        )
+
+    @staticmethod
+    def _ensure_editable(status: str) -> None:
+        """Corrections of a published version would change what is served."""
+        if status == "published":
+            raise Conflict(
+                "version_published",
+                "La versión está publicada: despublíquela antes de corregir su texto.",
+            )
 
     async def _launch(
         self,
