@@ -1,0 +1,87 @@
+{
+  "success": true,
+  "data": {
+    "markdown": "# REGLAMENTO DE PRUEBA DEL SERVICIO DE APOYO\n\nARTÍCULO 1. OBJETO. El presente texto ficticio regula un servicio de apoyo inventado para estudiantes, con fines exclusivamente de prueba automatizada del sistema de ingesta. Ningún contenido de este documento corresponde a una norma institucional real.\n\nARTÍCULO 2. REQUISITOS. Para acceder al servicio ficticio se requiere estar matriculado en un programa de pregrado, diligenciar el formulario de prueba y adjuntar el soporte correspondiente dentro de las fechas establecidas en el cronograma.\n\n---\n\n<!-- page 2 -->\n\nARTÍCULO 3. CRONOGRAMA. Las etapas del proceso ficticio son las siguientes:\n\n| Etapa | Fecha inicial | Fecha final |\n| --- | --- | --- |\n| Inscripción | 1 de marzo de 2030 | 10 de marzo de 2030 |\n| Publicación de resultados | 20 de marzo de 2030 | 20 de marzo de 2030 |\n\nARTÍCULO 4. VIGENCIA. Este texto de prueba rige a partir de su publicación ficticia y no sustituye ninguna disposición real.",
+    "pages": [
+      {
+        "pageNumber": 1,
+        "markdown": "# REGLAMENTO DE PRUEBA DEL SERVICIO DE APOYO\n\nARTÍCULO 1. OBJETO. El presente texto ficticio regula un servicio de apoyo inventado para estudiantes, con fines exclusivamente de prueba automatizada del sistema de ingesta. Ningún contenido de este documento corresponde a una norma institucional real.\n\nARTÍCULO 2. REQUISITOS. Para acceder al servicio ficticio se requiere estar matriculado en un programa de pregrado, diligenciar el formulario de prueba y adjuntar el soporte correspondiente dentro de las fechas establecidas en el cronograma."
+      },
+      {
+        "pageNumber": 2,
+        "markdown": "ARTÍCULO 3. CRONOGRAMA. Las etapas del proceso ficticio son las siguientes:\n\n| Etapa | Fecha inicial | Fecha final |\n| --- | --- | --- |\n| Inscripción | 1 de marzo de 2030 | 10 de marzo de 2030 |\n| Publicación de resultados | 20 de marzo de 2030 | 20 de marzo de 2030 |\n\nARTÍCULO 4. VIGENCIA. Este texto de prueba rige a partir de su publicación ficticia y no sustituye ninguna disposición real."
+      }
+    ],
+    "blocks": [
+      {
+        "pageNumber": 1,
+        "width": 2550,
+        "height": 3300,
+        "status": "ok",
+        "items": [
+          {
+            "id": "p1.b0",
+            "type": "title",
+            "label": "title",
+            "bbox": [
+              0.1,
+              0.05,
+              0.9,
+              0.1
+            ],
+            "content": "REGLAMENTO DE PRUEBA DEL SERVICIO DE APOYO",
+            "markdownSpan": [
+              0,
+              44
+            ],
+            "readingOrder": 0,
+            "source": "ocr",
+            "confidence": {
+              "layout": 0.98,
+              "ocr": 0.97
+            }
+          }
+        ]
+      },
+      {
+        "pageNumber": 2,
+        "width": 2550,
+        "height": 3300,
+        "status": "ok",
+        "items": [
+          {
+            "id": "p2.b0",
+            "type": "table",
+            "label": "table",
+            "bbox": [
+              0.1,
+              0.2,
+              0.9,
+              0.4
+            ],
+            "content": "Etapa",
+            "markdownSpan": null,
+            "readingOrder": 1,
+            "source": "ocr",
+            "confidence": {
+              "layout": 0.95,
+              "ocr": 0.93
+            }
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "scrapeId": "00000000-0000-0000-0000-000000000000",
+      "sourceURL": "prueba.pdf",
+      "url": "https://example.invalid/prueba.pdf",
+      "statusCode": 200,
+      "numPages": 2,
+      "totalPages": 2,
+      "contentType": "application/pdf",
+      "proxyUsed": "basic",
+      "creditsUsed": 2,
+      "concurrencyLimited": false
+    }
+  }
+}

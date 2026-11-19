@@ -1,0 +1,34 @@
+{
+  "name": "unitropico-ingestion",
+  "main": "src/worker.py",
+  "compatibility_date": "2026-11-08",
+  "compatibility_flags": ["python_workers"],
+  // No public HTTP surface: Default answers 404 and the Workflow is created by
+  // the API through its own workflows binding (script_name: unitropico-ingestion).
+  "workers_dev": false,
+  "preview_urls": false,
+  "workflows": [
+    { "name": "ingestion", "binding": "INGESTION", "class_name": "IngestionWorkflow" }
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "unitropico",
+      // PLACEHOLDER: replace with the id printed by `wrangler d1 create unitropico`
+      // (not created yet; local dev does not need a real id).
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "../../infra/d1/migrations"
+    }
+  ],
+  "r2_buckets": [{ "binding": "DOCUMENTS", "bucket_name": "unitropico-documents" }],
+  // Vectorize has no local emulation: `pywrangler dev --local` cannot call it.
+  "vectorize": [{ "binding": "VECTORIZE", "index_name": "unitropico-chunks-1536" }],
+  "vars": {
+    "EMBEDDING_MODEL": "openai/text-embedding-3-small",
+    "EMBEDDING_DIMENSIONS": "1536",
+    "OCR_VERSION": "firecrawl-parse-v2-ocr-v1",
+    "OCR_MAX_PAGES": "1000",
+    "INGESTION_LOG_LEVEL": "INFO"
+  }
+  // Secrets (wrangler secret put, NOT executed): FIRECRAWL_API_KEY, AI_GATEWAY_API_KEY.
+}
