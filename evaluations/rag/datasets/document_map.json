@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "description": "Mapa editable entre el identificador estable del dataset y lo que devuelve el RAG. Se resuelve en este orden: source_sha256 (solo /retrieval/query lo expone), document_ids, version_ids y títulos normalizados (minúsculas, sin tildes ni signos). Completar document_ids/version_ids/titles con los valores reales del catálogo D1 tras la ingesta; los sha256 provienen de evaluations/ocr/.artifacts/extraction-corpus-v2/documents.json.",
+  "documents": {
+    "res-cbu-002-2025": {
+      "source_name": "2. Resolución CBU No. 002-2025.pdf",
+      "sha256": ["a10a246e25e22e1df0847570154f27eb8782e745e140b5335d10d44beddd53c3"],
+      "page_count": 16,
+      "document_ids": [],
+      "version_ids": [],
+      "titles": ["Resolución CBU No. 002 de 2025", "Resolución CBU No. 002-2025", "Convocatoria Pública 2025-2 Apoyo Socioeconómico de Alimentación"]
+    },
+    "res-cbu-001-2026": {
+      "source_name": "Resolución CBU No. 001 de 2026 - Convocatoria Pública 2026-1 (1).pdf",
+      "sha256": ["3ebfd85b26199382c759240321622a1009b791e16dd895f4f7ea34428da2aa26"],
+      "page_count": 17,
+      "document_ids": [],
+      "version_ids": [],
+      "titles": ["Resolución CBU No. 001 de 2026", "Resolución CBU No. 001 de 2026 - Convocatoria Pública 2026-1", "Convocatoria Pública 2026-1"]
+    },
+    "politica-bienestar-cs-044-2023": {
+      "source_name": "politica de bienestar.pdf",
+      "sha256": ["f3ea87c496e14e9e525ad3d0da96d5c20bb26289122ae303fcb74e98291019a9"],
+      "page_count": 24,
+      "document_ids": [],
+      "version_ids": [],
+      "titles": ["Política Integral de Bienestar Universitario", "Acuerdo CS No. 044 de 2023", "Política de Bienestar"]
+    },
+    "ps-res-00137-2024": {
+      "source_name": "Res00137ReglamentaRentaJoven.pdf",
+      "sha256": ["c855bd4b0f33947857778afc9271250e9c7fe78b6fdadf890dd3b2b56920e362"],
+      "page_count": 20,
+      "document_ids": [],
+      "version_ids": [],
+      "titles": ["Resolución 00137 de 2024", "Resolución N.° 00137 de 2024 Renta Joven", "Res00137 Reglamenta Renta Joven"]
+    },
+    "ps-manual-m-ip-36": {
+      "source_name": "M-IP-36 MANUAL PROGRAMA RENTA JOVEN V1.pdf",
+      "sha256": ["7460b38f7360d0a4f965b47a2f21d2dbe6a5c282a015603c2385dc3b80fda214"],
+      "page_count": 75,
+      "document_ids": [],
+      "version_ids": [],
+      "titles": ["Manual Programa Renta Joven", "M-IP-36 Manual Programa Renta Joven V1"]
+    },
+    "ps-documento-tecnico-renta-joven": {
+      "source_name": "DOCUMENTO TECNICO RENTA JOVEN.pdf",
+      "sha256": ["46af91fb3a4efc942070444631141442e0343b75ff5584c5a77f9598f302fc0a"],
+      "page_count": 62,
+      "document_ids": [],
+      "version_ids": [],
+      "titles": ["Documento Técnico Renta Joven", "Documento Técnico de Diseño Programa Renta Joven"]
+    },
+    "ps-boletin-renta-joven-2025": {
+      "source_name": "Boletin Renta Joven 01 VA.pdf",
+      "sha256": ["d79766d84240fb74eebc1bba65b98ddf155c6334cab798f30ad2725c54a86a53"],
+      "page_count": 2,
+      "document_ids": [],
+      "version_ids": [],
+      "titles": ["Boletín Renta Joven 01", "Boletín de prensa Renta Joven 2025"]
+    }
+  }
+}
