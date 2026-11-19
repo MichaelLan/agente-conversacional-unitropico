@@ -33,6 +33,8 @@ ignore = ["E501"]
 "remaining_send.py" = ["E402"]
 "prepare_selective.py" = ["E402"]
 "selective_send.py" = ["E402"]
+"prepare_alt_pilot.py" = ["E402"]
+"alt_ocr.py" = ["E402"]
 "assemble_cache.py" = ["E402"]
 # B023: los lambdas/closures se invocan de forma síncrona dentro de la misma iteración
 # (no se difieren), así que no hay bug de enlace tardío.

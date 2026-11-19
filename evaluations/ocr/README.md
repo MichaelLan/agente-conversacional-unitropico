@@ -129,6 +129,127 @@ También genera `upload-plan.md` con los comandos `npx wrangler r2 object put �
 (**no ejecutados**). El PDF original debe estar además en `raw/{sha256}.pdf`: lo sube
 la API al cargarlo por el panel. Subir la caché antes de lanzar la ingesta.
 
+## Piloto OCR alternativo v1 (10 páginas, Azure y Mistral)
+
+Compara motores alternativos a Firecrawl sobre 10 páginas ya auditadas (01 p3, p12,
+p13, p14 · 02 p16, p18, p20, p22, p54 · 03 p38), según `docs/research/ocr-alternatives.md`.
+`prepare_alt_pilot.py` (offline, ya ejecutado) cortó **un PDF de una página por
+página** con la imagen Poppler local (red `none`, original de solo lectura) y verificó
+texto, render y geometría de cada fragmento contra su original. Manifiesto inmutable:
+`.artifacts/alt-ocr-pilot-v1/manifest.json` (sha256
+`0fc698abb01be2fe81df33f5cecb4a06193066770f4de7264c662b702b2e6327`, fijado en
+`alt_ocr.py` junto a los hashes de cada fragmento; el mayor pesa 556 KB).
+
+### Qué debe crear el usuario
+
+- **Azure (principal):** en el portal de Azure, crear un recurso **Document
+  Intelligence** (nivel **F0** gratuito: 500 págs./mes, 2 págs. por petición, 4 MB;
+  o **S0**) en cualquier región. En «Keys and Endpoint» copiar el endpoint
+  (`https://<nombre>.cognitiveservices.azure.com`) y la clave 1. No hace falta nada más.
+- **Mistral (opcional):** cuenta en `console.mistral.ai` con facturación activada y una
+  API key. Los datos se retienen 30 días salvo *zero data retention*.
+
+### Variables de entorno
+
+`AZURE_DOCINT_ENDPOINT`, `AZURE_DOCINT_KEY`, `MISTRAL_API_KEY`. Se leen del entorno o
+de un `--env-file` explícito (solo esas líneas `NOMBRE=valor`; sin shell, expansión ni
+`eval`). Nunca se registran: el ledger no guarda ni la clave ni el nombre del recurso.
+El endpoint de Azure debe ser exactamente `https://<nombre>.cognitiveservices.azure.com`
+(sin puerto, ruta ni credenciales); cualquier otro se rechaza antes de abrir el ledger.
+
+### Comandos exactos (desde la raíz de `agente-conversacional-unitropico/`)
+
+```sh
+uv run --no-project --python 3.14 python evaluations/ocr/alt_ocr.py check
+export AZURE_DOCINT_ENDPOINT='https://<nombre>.cognitiveservices.azure.com'
+export AZURE_DOCINT_KEY='<clave>'
+uv run --no-project --python 3.14 python evaluations/ocr/alt_ocr.py send --provider azure --confirm-pages 10
+uv run --no-project --python 3.14 python evaluations/ocr/alt_ocr.py status
+uv run --no-project --python 3.14 python evaluations/ocr/alt_ocr.py export --provider azure
+# Opcional (0,04 USD):
+export MISTRAL_API_KEY='<clave>'
+uv run --no-project --python 3.14 python evaluations/ocr/alt_ocr.py send --provider mistral --confirm-pages 10
+uv run --no-project --python 3.14 python evaluations/ocr/alt_ocr.py export --provider mistral
+```
+
+Con S0 añadir `--azure-tier s0` (con F0 el script rechaza localmente fragmentos de más
+de 3 MB). `--confirm-pages` es obligatorio y debe valer exactamente 10.
+
+### Comportamiento y garantías
+
+- **Ledger exclusivo por (proveedor, página):** `execution/<proveedor>/<page_id>/` se crea
+  con `mkdir` exclusivo y `attempt.json` se escribe con `fsync` **antes** de cada HTTP.
+  Una carpeta sin `result.json` completo (timeout, 4xx/5xx, respuesta truncada,
+  operación fallida, sondeo agotado) detiene todo envío posterior: **no hay reintentos ni
+  replay**; hay que decidir a mano (`status`, portal del proveedor).
+- Sin redirects, sin proxies heredados, transporte `urllib` con un solo intento. Las
+  respuestas crudas se guardan intactas (`post.raw`, `response.raw`, `operation.json`).
+- Azure es asíncrono: `POST` → `202` + `Operation-Location` (solo se acepta el mismo host,
+  la ruta `prebuilt-layout/analyzeResults/<id>` y `api-version=2024-11-30`; la clave
+  nunca se envía a otra URL) → `GET` con `Retry-After` (2–30 s) hasta `succeeded`,
+  con un tope de 300 s tras el cual la página queda **incierta**.
+- Observabilidad por fases a stderr (`phase=… category=… status=…`), sin texto de
+  respuesta ni cabeceras.
+
+### Salida (`export`, offline, exige las 10 páginas completas)
+
+`.artifacts/alt-ocr-pilot-v1/export/<proveedor>/`:
+
+- `<slug-documento>.json`: forma Firecrawl Parse v2 (`{"success": true, "data": {"pages":
+  [{"pageNumber": <página física>, "markdown", "source", "confidence"}], "metadata":
+  {"numPages", "totalPages"}, "provenance"}}`), **aceptada por `parse_ocr_response`** del
+  worker de ingesta (comprobado en `tests/test_alt_ocr.py`). Se exporta por documento
+  porque el parser rechaza números de página duplicados y las 10 páginas pertenecen a
+  3 documentos. `assemble_cache.py` **no** se usa: requiere el documento completo
+  (reutiliza páginas ok/minor y mapea lotes Firecrawl); si el piloto resulta ganador se
+  adaptará en su momento (otro `source` y otro `OCR_VERSION`).
+- `pages.json` (`alt-ocr-pilot-export/v1`): las 10 páginas con `page_id`, `document`,
+  `pageNumber`, `markdown` y `confidence` para la comparación.
+- Azure: Markdown de `analyzeResult.content` cortado por `pages[].spans`
+  (`outputContentFormat=markdown`, tablas en HTML tal como las devuelve el servicio,
+  `stringIndexType=unicodeCodePoint`); confianza por palabra (`words[].confidence`,
+  mínimo y media) y por línea solo si el servicio la incluye.
+- Mistral: `pages[0].markdown` con los marcadores `[tbl-N.html](tbl-N.html)` sustituidos
+  por el HTML de `tables` (`table_format=html`); confianza por palabra
+  (`confidence_scores_granularity=word`) y medias/mínimos de página.
+
+### Coste esperado
+
+| Proveedor | 10 páginas |
+|---|---|
+| Azure `prebuilt-layout` F0 | 0 USD (1 página por petición; cuota 500 págs./mes) |
+| Azure `prebuilt-layout` S0 | 0,10 USD (10 USD/1000 págs.) |
+| Mistral OCR (`mistral-ocr-latest`) | 0,04 USD (4 USD/1000 págs.) |
+
+`status` (offline) muestra el estado por página y proveedor y el coste máximo estimado
+de las páginas intentadas; el consumo real solo se confirma en el portal del proveedor.
+
+### Fuentes oficiales (consultadas el 2026-11-19)
+
+- Azure Analyze Document 2024-11-30: https://learn.microsoft.com/en-us/rest/api/aiservices/document-models/analyze-document?view=rest-aiservices-v4.0%20(2024-11-30)
+- Azure Get Analyze Result: https://learn.microsoft.com/en-us/rest/api/aiservices/document-models/get-analyze-result?view=rest-aiservices-v4.0%20(2024-11-30)
+- Azure límites F0/S0: https://learn.microsoft.com/en-us/azure/ai-services/document-intelligence/service-limits?view=doc-intel-4.0.0
+- Mistral endpoint OCR: https://docs.mistral.ai/api/endpoint/ocr
+- Mistral OCR (tablas, confianza): https://docs.mistral.ai/capabilities/document_ai/basic_ocr/
+
+**No verificado en la documentación oficial** (el script lo trata de forma defensiva):
+valores exactos del enum `status` de Azure (se asumen `notStarted`/`running`/`succeeded`/
+`failed`; cualquier otro valor deja la página incierta); que `contentFormat` valga
+`markdown` con `outputContentFormat=markdown` (`export` lo exige); el formato exacto del
+data URI base64 de Mistral para PDF (se envía `data:application/pdf;base64,…` en
+`document_url`) y si acepta ese tamaño; los campos internos de `pages[].tables` y de
+`word_confidence_scores` (se usan `id`, `content`, `text`, `confidence`); la base del
+índice de página de Mistral (no se usa: cada PDF tiene una página); si Azure devuelve
+confianza por línea.
+
+### Siguiente paso
+
+Auditoría **ciega** de las 10 páginas por proveedor con la misma rúbrica del OCR
+selectivo v1 (`ok`/`minor`/`defect`/`missing`; alucinaciones como criterio eliminatorio;
+hechos críticos exactos; estructura de tablas; utilidad de la confianza), siguiendo
+`docs/research/ocr-alternatives.md` §7. Solo si un proveedor cumple la regla de decisión
+se autorizan las 61 páginas restantes.
+
 ## Herramientas de calidad
 
 Proyecto Python propio (`pyproject.toml`, `uv.lock`; Python 3.14, sin dependencias
