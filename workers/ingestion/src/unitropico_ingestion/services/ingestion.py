@@ -12,7 +12,7 @@ from dataclasses import asdict
 from hashlib import sha256
 
 from unitropico_ingestion.domain.chunking import Chunk, Chunker, PageText
-from unitropico_ingestion.domain.corrections import AppliedCorrection
+from unitropico_ingestion.domain.corrections import AppliedCorrection, AppliedOverride
 from unitropico_ingestion.domain.ingestion import (
     ErrorCode,
     IngestionError,
@@ -29,6 +29,7 @@ from unitropico_ingestion.ports import (
 )
 from unitropico_ingestion.services.corrections import apply_corrections
 from unitropico_ingestion.services.ocr_parser import parse_ocr_response
+from unitropico_ingestion.services.overrides import apply_overrides
 
 EMBED_BATCH_SIZE = 96
 """Chunks per embedding request (one ``embed_{n}`` step each)."""
@@ -58,6 +59,11 @@ def ocr_key(source_sha256: str, ocr_version: str, max_pages: int) -> str:
 def chunks_key(version_id: str, chunker_version: str) -> str:
     """JSONL with the chunks of one version and chunker."""
     return f"chunks/{version_id}/{chunker_version}.jsonl"
+
+
+def pages_key(version_id: str, chunker_version: str) -> str:
+    """JSON with the final prepared text of every page (read by the admin API)."""
+    return f"pages/{version_id}/{chunker_version}.json"
 
 
 def embeddings_key(
@@ -178,15 +184,59 @@ async def run_ocr(
 
 
 # -- step 3 ----------------------------------------------------------------------
-def _chunk_line(chunk: Chunk, applied: Sequence[AppliedCorrection] = ()) -> str:
+def _chunk_line(
+    chunk: Chunk,
+    applied: Sequence[AppliedCorrection] = (),
+    overrides: Sequence[AppliedOverride] = (),
+) -> str:
     row = asdict(chunk)
     row["token_estimate"] = token_estimate(chunk.text)
-    # Corrections applied to the pages this chunk covers (trace, not a claim
-    # that the replaced text falls inside this very chunk).
+    # Corrections and overrides applied to the pages this chunk covers (trace,
+    # not a claim that the replaced text falls inside this very chunk).
     row["correction_ids"] = [
         c.id for c in applied if chunk.page_start <= c.page_number <= chunk.page_end
     ]
+    row["override_ids"] = [
+        o.id for o in overrides if chunk.page_start <= o.page_number <= chunk.page_end
+    ]
     return json.dumps(row, ensure_ascii=False, sort_keys=True)
+
+
+def _pages_document(
+    *,
+    version_id: str,
+    chunker_version: str,
+    page_count: int,
+    corrections_rev: int,
+    pages: Sequence[PageText],
+    overrides: Sequence[AppliedOverride],
+    applied: Sequence[AppliedCorrection],
+) -> bytes:
+    """Serialize the final prepared text of pages 1..page_count.
+
+    A page without visible text is listed with ``text: ""``. ``source`` is
+    ``override`` when an override replaced the page, else ``ocr``.
+    """
+    texts = {page.page_number: page.text for page in pages}
+    by_page = {override.page_number: override.id for override in overrides}
+    rows = [
+        {
+            "page_number": number,
+            "text": texts.get(number, ""),
+            "source": "override" if number in by_page else "ocr",
+            "override_id": by_page.get(number),
+            "corrections_applied": [c.id for c in applied if c.page_number == number],
+        }
+        for number in range(1, page_count + 1)
+    ]
+    document = {
+        "version_id": version_id,
+        "chunker_version": chunker_version,
+        "page_count": page_count,
+        "corrections_rev": corrections_rev,
+        "pages": rows,
+    }
+    return json.dumps(document, ensure_ascii=False, sort_keys=True).encode("utf-8")
 
 
 def _parse_chunks(data: bytes) -> list[dict]:
@@ -203,16 +253,19 @@ async def chunk_version(
 ) -> dict:
     """Chunk the stored OCR by physical page and replace the version chunks.
 
-    The administrator's active text corrections are applied to the prepared
-    pages (``chunker.prepare``: the text shown in the chunks) right before
-    segmentation; the cached OCR object is only read, never rewritten. A
-    correction that does not match exactly once fails the version with the
-    permanent ``correction_not_applicable`` before anything is written.
+    The administrator's active page overrides replace the text of their pages
+    in the prepared pages (``chunker.prepare``: the text shown in the chunks),
+    then the active text corrections are applied, right before segmentation;
+    the cached OCR object is only read, never rewritten. A correction that does
+    not match exactly once (or an override beyond the page count) fails the
+    version with the permanent ``correction_not_applicable`` before anything
+    is written. The final prepared text of every page is stored in
+    ``pages/{version_id}/{chunker_version}.json`` for the admin review.
 
-    The corrections are read in one snapshot with their revision
+    Corrections and overrides are read in one snapshot with their revision
     (``corrections_rev``); the chunk write clears ``corrections_dirty`` only
-    if that revision is still current, so a correction created or deleted
-    while this step ran keeps the version unpublishable until a new run.
+    if that revision is still current, so a correction or override created or
+    deleted while this step ran keeps the version unpublishable until a new run.
     """
     raw = await blobs.get(ocr_key)
     if raw is None:
@@ -220,21 +273,46 @@ async def chunk_version(
     result = parse_ocr_response(raw)
     pages = [PageText(page.page_number, page.markdown) for page in result.pages]
     correction_set = await repo.correction_set(version_id)
-    prepared, applied = apply_corrections(
-        chunker.prepare(pages), correction_set.corrections
+    overridden, overrides = apply_overrides(
+        chunker.prepare(pages),
+        correction_set.overrides,
+        prepare=chunker.prepare,
+        page_count=result.page_count,
     )
+    prepared, applied = apply_corrections(overridden, correction_set.corrections)
     chunks = chunker.chunk_prepared(prepared, version_id=version_id)
     if not chunks:
         raise IngestionError(ErrorCode.OCR_EMPTY, "chunks=0", permanent=True)
     key = chunks_key(version_id, chunker.version)
-    body = "".join(_chunk_line(chunk, applied) + "\n" for chunk in chunks)
+    body = "".join(_chunk_line(chunk, applied, overrides) + "\n" for chunk in chunks)
     await blobs.put(key, body.encode("utf-8"), content_type="application/x-ndjson")
+    page_key = pages_key(version_id, chunker.version)
+    await blobs.put(
+        page_key,
+        _pages_document(
+            version_id=version_id,
+            chunker_version=chunker.version,
+            page_count=result.page_count,
+            corrections_rev=correction_set.revision,
+            pages=prepared,
+            overrides=overrides,
+            applied=applied,
+        ),
+        content_type=JSON,
+    )
     corrections_clean = await repo.replace_chunks(
         version_id,
         chunker_version=chunker.version,
         chunks=chunks,
         corrections_rev=correction_set.revision,
     )
+    for override in overrides:
+        await repo.log_event(
+            version_id,
+            step="correct",
+            status="succeeded",
+            detail=f"override_applied id={override.id} page={override.page_number}",
+        )
     for item in applied:
         await repo.log_event(
             version_id,
@@ -248,7 +326,7 @@ async def chunk_version(
         status="succeeded",
         detail=(
             f"chunks={len(chunks)} corrections={len(applied)} "
-            f"corrections_rev={correction_set.revision} "
+            f"overrides={len(overrides)} corrections_rev={correction_set.revision} "
             f"corrections_pending={int(not corrections_clean)}"
         ),
     )
@@ -257,7 +335,9 @@ async def chunk_version(
         "chunks_key": key,
         "chunk_count": len(chunks),
         "chunker_version": chunker.version,
+        "pages_key": page_key,
         "corrections_applied": [correction.id for correction in applied],
+        "overrides_applied": [override.id for override in overrides],
         "corrections_rev": correction_set.revision,
         "corrections_pending": not corrections_clean,
     }

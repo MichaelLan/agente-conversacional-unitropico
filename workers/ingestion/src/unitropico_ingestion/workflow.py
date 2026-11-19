@@ -282,6 +282,7 @@ async def run_ingestion(
         "status": final["status"],
         "chunk_count": chunked["chunk_count"],
         "corrections_applied": len(chunked.get("corrections_applied", [])),
+        "overrides_applied": len(chunked.get("overrides_applied", [])),
         "corrections_pending": bool(chunked.get("corrections_pending", False)),
         "page_count": ocr["page_count"],
         "ocr_reused": ocr["reused"],

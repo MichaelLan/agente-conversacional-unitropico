@@ -5,11 +5,11 @@ The binding is the SDK-wrapped D1 database: ``prepare(sql).bind(*args)`` with
 as Python dicts (or attribute objects) shaped ``{"results": [...], "meta":
 {"changes": n, ...}}``.
 
-``LOG_EVENT``, ``ACTIVE_CORRECTIONS``, ``CORRECTIONS_REV`` and
-``CLEAR_CORRECTIONS_DIRTY`` are verbatim copies of the canonical ``log_event``,
-``active_corrections_by_version``, ``corrections_rev_by_version`` and
-``clear_corrections_dirty`` blocks of ``infra/d1/queries.sql`` (a test keeps
-them identical). The other statements
+``LOG_EVENT``, ``ACTIVE_CORRECTIONS``, ``ACTIVE_OVERRIDES``, ``CORRECTIONS_REV``
+and ``CLEAR_CORRECTIONS_DIRTY`` are verbatim copies of the canonical
+``log_event``, ``active_corrections_by_version``, ``active_overrides_by_version``,
+``corrections_rev_by_version`` and ``clear_corrections_dirty`` blocks of
+``infra/d1/queries.sql`` (a test keeps them identical). The other statements
 are specific to the ingestion state machine and are not yet in that file.
 Status transitions are also enforced by the schema triggers; the ``WHERE``
 clauses make every write idempotent and never target ``published``.
@@ -18,7 +18,11 @@ clauses make every write idempotent and never target ``published``.
 from collections.abc import Mapping, Sequence
 
 from unitropico_ingestion.domain.chunking import Chunk
-from unitropico_ingestion.domain.corrections import CorrectionSet, TextCorrection
+from unitropico_ingestion.domain.corrections import (
+    CorrectionSet,
+    PageOverride,
+    TextCorrection,
+)
 from unitropico_ingestion.domain.ingestion import VersionRecord
 from unitropico_ingestion.services.ingestion import token_estimate
 
@@ -30,6 +34,11 @@ ACTIVE_CORRECTIONS = """SELECT id, page_number, find_text, replace_text
 FROM text_corrections
 WHERE version_id = ?1 AND deleted_at IS NULL
 ORDER BY created_at, rowid;"""
+
+ACTIVE_OVERRIDES = """SELECT id, page_number, text
+FROM page_overrides
+WHERE version_id = ?1 AND deleted_at IS NULL
+ORDER BY page_number;"""
 
 CORRECTIONS_REV = "SELECT corrections_rev FROM document_versions WHERE id = ?1;"
 
@@ -140,12 +149,13 @@ class D1VersionRepository:
         )
 
     async def correction_set(self, version_id: str) -> CorrectionSet:
-        """Return revision and active corrections from one atomic batch."""
-        rev_result, rows_result = list(
+        """Return revision, active corrections and overrides from one atomic batch."""
+        rev_result, rows_result, override_result = list(
             await self._db.batch(  # type: ignore[attr-defined]
                 [
                     self._stmt(CORRECTIONS_REV, version_id),
                     self._stmt(ACTIVE_CORRECTIONS, version_id),
+                    self._stmt(ACTIVE_OVERRIDES, version_id),
                 ]
             )
         )
@@ -161,7 +171,15 @@ class D1VersionRepository:
             )
             for row in rows
         ]
-        return CorrectionSet(revision, tuple(corrections))
+        overrides = [
+            PageOverride(
+                id=str(_field(row, "id")),
+                page_number=int(_field(row, "page_number")),  # type: ignore[arg-type]
+                text=str(_field(row, "text")),
+            )
+            for row in _field(override_result, "results", None) or []
+        ]
+        return CorrectionSet(revision, tuple(corrections), tuple(overrides))
 
     async def replace_chunks(
         self,

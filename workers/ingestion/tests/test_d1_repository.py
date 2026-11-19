@@ -250,3 +250,10 @@ def test_changes_accept_float_and_attribute_results(changes, expected):
     """JS numbers become floats; meta may be an attribute object."""
     repo = D1VersionRepository(_AttrDb(changes))
     assert asyncio.run(repo.start_processing("v1")) is expected
+
+
+def test_active_overrides_is_the_canonical_query():
+    """The overrides read is the canonical query."""
+    assert " ".join(d1_repository.ACTIVE_OVERRIDES.split()) == _canonical(
+        "active_overrides_by_version"
+    )

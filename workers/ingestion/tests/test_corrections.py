@@ -221,7 +221,7 @@ def test_page_18_correction_is_applied_and_traced():
         "chunk",
         "succeeded",
         None,
-        f"chunks={result['chunk_count']} corrections=1 corrections_rev=1 "
+        f"chunks={result['chunk_count']} corrections=1 overrides=0 corrections_rev=1 "
         "corrections_pending=0",
     ) in (events)
 

@@ -102,7 +102,7 @@ Al reprocesar, el paso `chunk`:
    `document_versions_publish_guard` y un `CHECK` lo impiden también en D1).
 6. Trazabilidad: un evento `correct/succeeded` por corrección aplicada
    (`detail = "correction_applied id={id} page={n}"`), `chunk/succeeded` con
-   `chunks=N corrections=M corrections_rev=R corrections_pending=0|1`, el campo
+   `chunks=N corrections=M overrides=K corrections_rev=R corrections_pending=0|1`, el campo
    `correction_ids` en cada línea del JSONL (correcciones aplicadas a páginas
    que cubre ese chunk; no afirma que el tramo sustituido caiga dentro de ese
    chunk) y `corrections_applied` (lista de ids), `corrections_rev` y
@@ -114,6 +114,43 @@ del chunk (y, si cambian los límites, el de los siguientes). Los lotes de
 embeddings cuyos ids ya no coinciden se recalculan (coste de embeddings, no de
 OCR) y el manifiesto de Vectorize borra los ids viejos con `deleteByIds`.
 Borrar la corrección y reprocesar restaura los chunks originales.
+
+### Sustituciones de página completa (paso `chunk`)
+
+El administrador puede sustituir el texto completo de una página física
+(`page_overrides`, como máximo una activa por página; contrato 4c). En el paso
+`chunk`, `correction_set()` lee en **el mismo batch** la revisión, las
+correcciones activas y las sustituciones activas (una instantánea). Orden:
+
+1. `chunker.prepare(pages)` sobre el OCR (igual que antes).
+2. Cada página con sustitución activa toma el texto de la sustitución pasado
+   por la **misma** preparación, llamada con esa única página
+   (`chunker.prepare([PageText(n, text)])`): normalización y tablas HTML →
+   Markdown. **No se eliminan cabeceras/pies repetidos** del texto sustituido:
+   esa regla necesita las demás páginas y el administrador lo escribió a
+   propósito (con una sola página `strip_repeated_lines` no actúa). Una página
+   sin texto del OCR (p. ej. un diagrama escaneado) gana la página; si el texto
+   preparado queda vacío la página queda sin texto. Una sustitución por encima
+   del `page_count` del OCR (solo posible si se creó antes de la primera
+   extracción) falla con `correction_not_applicable`
+   (`override=<id> page=<n> page_count=<m>`).
+3. Después se aplican las correcciones literales; las de una página sustituida
+   se buscan en el texto de la sustitución (las que apuntaban al texto del OCR
+   dejan de coincidir y la versión falla con `correction_not_applicable`).
+4. Se guarda `pages/{version_id}/{chunker_version}.json` (lo lee
+   `GET /admin/versions/{id}/pages`):
+   `{version_id, chunker_version, page_count, corrections_rev, pages: [{page_number,
+   text, source: "ocr"|"override", override_id, corrections_applied}]}` con las
+   páginas 1..`page_count` (las que no tienen texto, con `text: ""`).
+5. Trazabilidad: un evento `correct/succeeded` `override_applied id={id}
+   page={n}` por sustitución (antes de los de correcciones), `overrides=K` en el
+   evento `chunk`, `override_ids` en cada línea del JSONL, `pages_key` y
+   `overrides_applied` en el resultado del paso y su conteo en el del Workflow.
+   `clear_corrections_dirty` sigue condicionado a la revisión leída: crear o
+   borrar una sustitución mientras corría el paso deja la versión pendiente.
+
+El OCR cacheado en R2 nunca se modifica: reprocesar con una sustitución no
+vuelve a pagar OCR.
 
 Límites conocidos: las correcciones son por página física. Un chunk que une el
 final de una página con el principio de la siguiente se corrige página a
@@ -151,14 +188,16 @@ Nombres de paso en `processing_events`: `extract`, `correct`, `chunk`,
 - `domain/ingestion.py`: `IngestionParams`, `VersionRecord`, `OcrPage`,
   `OcrResult`, `ErrorCode`, `IngestionError` y `sanitize_detail`.
 - `domain/chunking.py`: `PageText`, `Chunk` y el esquema de ids (C1).
-- `domain/corrections.py`: `TextCorrection`, `CorrectionSet` (correcciones +
-  `corrections_rev`) y `AppliedCorrection`.
+- `domain/corrections.py`: `TextCorrection`, `PageOverride`, `CorrectionSet`
+  (correcciones + sustituciones + `corrections_rev`), `AppliedCorrection` y
+  `AppliedOverride`.
 - `ports.py`: `BlobStore`, `OcrClient`, `Embedder`, `VersionRepository` y
   `VectorIndex`.
 - `services/ingestion.py`: casos de uso por etapa (`mark_processing`, `run_ocr`,
   `chunk_version`, `embed_chunks`, `index_chunks`, `finalize`).
   `services/ocr_parser.py` interpreta la respuesta de Firecrawl.
-  `services/corrections.py` aplica las correcciones de texto.
+  `services/corrections.py` aplica las correcciones de texto y
+  `services/overrides.py` las sustituciones de página.
   `services/chunker.py` y los módulos relacionados contienen el chunker
   estructural (C1).
 - `infra/`: `r2_store.py`, `firecrawl.py` (multipart con `js.fetch`; el runtime

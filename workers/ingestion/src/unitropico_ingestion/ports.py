@@ -80,9 +80,10 @@ class VersionRepository(Protocol):
         ...
 
     async def correction_set(self, version_id: str) -> CorrectionSet:
-        """Return the active corrections (application order) and their revision.
+        """Return active corrections, active page overrides and their revision.
 
-        Both are read in one snapshot (one D1 batch).
+        Corrections come in application order. All are read in one snapshot
+        (one D1 batch).
         """
         ...
 
