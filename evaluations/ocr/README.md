@@ -14,8 +14,120 @@ Este README conserva abajo la descripción del primer piloto; el estado vigente 
 - Corpus v2: ensamblado parcial offline (216 páginas únicas; 15 de convocatoria SIN
   texto). Todas las páginas conservan `requires_review` y `publication_blocked`:
   **bloqueado para publicación**, no es un corpus completo para web/RAG.
-- Los scripts `pilot.py`, `remaining.py` y `remaining_send.py` hacen o preparan
-  llamadas de pago; no ejecutar `send` sin autorización humana explícita.
+- OCR selectivo v1: 106 páginas preparadas offline en 7 lotes, **no enviadas**
+  (ver «OCR selectivo v1» abajo; 106 créditos autorizados por el usuario).
+- Los scripts `pilot.py`, `remaining.py`, `remaining_send.py` y `selective_send.py`
+  hacen o preparan llamadas de pago; no ejecutar `send` sin autorización humana explícita.
+
+## OCR selectivo v1 (106 páginas autorizadas)
+
+Origen: auditoría visual página a página (`reports/extraction-quality-audit.json`).
+De 216 páginas, **110 se reutilizan** (`ok`/`minor`) y **106 se reprocesan** con
+Firecrawl (86 `defect`/`missing` + 20 con errores puntuales). El usuario autorizó
+expresamente **106 créditos** (1 crédito/página) para esas 106 páginas exactas.
+Referencia de saldo: el Dashboard de Firecrawl mostraba 22 créditos consumidos en
+total antes de este envío (el lote incierto de 15 páginas de la Convocatoria no se cobró).
+
+### 1. Preparación (ya ejecutada; offline y gratuita)
+
+```sh
+uv run --no-project --python 3.14 python evaluations/ocr/prepare_selective.py
+```
+
+Selecciona `firecrawl_ocr_pages + literal_patch_pages` de la auditoría (SHA-256
+fijado) y falla si no son exactamente 106. Corta un PDF fragmento por lote con
+la imagen Poppler local (red `none`, original montado read-only, timeout 60 s)
+y verifica cada página del fragmento contra su página física (hash del texto
+de `pdftotext`, hash de un render a 40 dpi, tamaño y rotación). Escribe
+`.artifacts/selective-ocr-v1/manifest.json` (exclusivo; el directorio existente,
+incluso de un fallo, bloquea otra preparación: **no regenerar**).
+
+| Lote | Págs. | Páginas físicas | Bytes | SHA-256 del fragmento |
+|---|---:|---|---:|---|
+| 01-res-cbu-002-2025 | 16 | 1–16 | 816479 | `ecc6bb47f87707248d19fa8ccd26e27c16c54714c86b99e5beddc1ff64ec536a` |
+| 02-documento-tecnico | 17 | 5, 16–18, 20–22, 30, 32, 44–46, 54, 57–59, 61 | 4457243 | `9207bc79a00908a3d8ad676517478236fb7fbab627ca85c3601739140effc4ae` |
+| 03-manual-m-ip-36-1of2 | 12 | 14, 18–20, 23, 27–29, 35, 36, 38, 40 | 942768 | `35e307ab592a411736d84c51420544ef5beee000ff058e639468bd3b3ae0d872` |
+| 04-manual-m-ip-36-2of2 | 12 | 41, 47, 52, 61–65, 67, 68, 74, 75 | 927282 | `4fb4cda7a733779845de35fefb35fe1fe8f04e1d76a737c703297bdbd264b43b` |
+| 05-res-00137 | 12 | 1–5, 9, 11, 13, 14, 17–19 | 12052896 | `4fc6c946c62ce5886059ed94f665d974b6fcd7ad7e081aef76bdc81b93a6ec87` |
+| 06-convocatoria-2026-1 | 17 | 1–17 | 7709394 | `9498437d14958d079f654962c45d7e4e93f20edf249e4a9710299e1d595b7d30` |
+| 07-politica-bienestar | 20 | 1–4, 7–18, 20, 22–24 | 7222973 | `4271c2b8745856e48a5bc5ab3d9078aa41494dcdc5d0c75189fdd08ca8f534fd` |
+
+Total 106 páginas, 7 lotes (≤ 20 páginas y ≤ 50 MB cada uno). Manifest SHA-256
+`5868748c1b2ec6e5bb40959ca8e6ee0aeec41762db580426923f8843fe433161`; ese hash y
+los de cada fragmento están fijados como constantes en `selective_send.py`.
+
+### 2. Envío (lo ejecuta el usuario, a mano, desde la raíz del repo)
+
+Comprobación offline previa (sin clave, sin ledger, sin red):
+
+```sh
+uv run --no-project --python 3.14 python evaluations/ocr/selective_send.py check
+```
+
+Envío pagado (**106 créditos como máximo**, un POST por lote, sin retries):
+
+```sh
+uv run --no-project --python 3.14 python evaluations/ocr/selective_send.py send --confirm-credits 106 --env-file .env
+```
+
+- Sin `--confirm-credits 106` exacto no se carga la clave ni se envía nada.
+- `--env-file` lee solo `FIRECRAWL_API_KEY` (mismas reglas que `pilot.py`); sin él,
+  usa la variable de entorno. La clave nunca se registra.
+- Antes de cada POST se verifica el manifest (hash fijado), el fragmento (hash,
+  tamaño, `%PDF-`, ≤ 50 MB) y el original. Endpoint fijo
+  `https://api.firecrawl.dev/v2/parse`, sin proxies heredados ni redirects.
+- Por lote: `execution/<lote>/attempt.json` (exclusivo + fsync **antes** del HTTP),
+  `response.raw` (cuerpo recibido) y `result.json`. Opciones: `mode: "ocr"`,
+  `maxPages` = páginas del lote, `pages`, `blocks`, `pageMarkers`, timeout 300 s
+  (cliente 330 s).
+- Procesa los lotes en orden y **se detiene en el primero que no quede completo**
+  (timeout, error de red, HTTP ≠ 200, cobertura de páginas incompleta). Un lote
+  completo exige HTTP 200, `success: true` y todas sus páginas/bloques.
+- Volver a ejecutar `send` salta los lotes completos y continúa con los no
+  iniciados, pero **se niega a enviar nada** si existe cualquier lote incierto.
+
+### 3. Estado (offline)
+
+```sh
+uv run --no-project --python 3.14 python evaluations/ocr/selective_send.py status
+```
+
+Lista cada lote (`not_started`, `complete`, `uncertain`), su código HTTP, los
+créditos declarados por `metadata.creditsUsed` y las páginas físicas con markdown
+vacío. Sin respuesta, el consumo se muestra como **«consumo desconocido»**.
+
+### Si un lote queda incierto
+
+**No reintentar**, no borrar su carpeta ni su `attempt.json`. Ejecutar `status`,
+consultar el consumo real en el Dashboard de Firecrawl y avisar antes de cualquier
+otro envío: un timeout puede haber consumido créditos sin respuesta local.
+Cualquier reenvío necesita una nueva autorización humana y un plan que preserve
+la evidencia.
+
+### 4. Siguiente paso: auditoría visual, luego ensamblado
+
+Antes de ensamblar, revisar visualmente las 106 páginas nuevas contra el PDF
+(mismo criterio que `reports/extraction-quality-audit.md`); un HTTP 200 no prueba
+calidad OCR. Después, offline:
+
+```sh
+uv run --no-project --python 3.14 python evaluations/ocr/assemble_cache.py
+```
+
+Exige los 7 lotes completos y combina, por documento, las páginas reutilizables de
+`extraction-corpus-v2` (SHA-256 fijado) con las nuevas (fragmento → página física).
+Falla si falta cualquier página física o si una página queda sin texto. Escribe en
+`.artifacts/ingestion-cache-v1/` un JSON por documento (los 7, incluido el Boletín,
+100 % reutilizado) bajo la clave R2 del paso `ocr` del Workflow,
+`ocr/{sha256}/firecrawl-parse-v2-ocr-v1-p1000.json` (valores por defecto de
+`OCR_VERSION`/`OCR_MAX_PAGES`). Formato Firecrawl Parse v2 (`data.pages`,
+`data.metadata.numPages/totalPages`); cada página lleva `source`
+(`reused_pdftotext`, `reused_firecrawl` o `firecrawl_selective_v1`) y
+`data.provenance` resume lotes y hashes: el parser real de la ingesta ignora ambos
+campos (comprobado en `tests/test_assemble_cache.py` y en el propio ensamblado).
+También genera `upload-plan.md` con los comandos `npx wrangler r2 object put … --remote`
+(**no ejecutados**). El PDF original debe estar además en `raw/{sha256}.pdf`: lo sube
+la API al cargarlo por el panel. Subir la caché antes de lanzar la ingesta.
 
 ## Herramientas de calidad
 

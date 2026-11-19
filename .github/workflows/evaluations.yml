@@ -4,10 +4,16 @@ on:
   push:
     paths:
       - 'evaluations/ocr/**'
+      # test_assemble_cache.py imports the real ingestion OCR parser and settings.
+      - 'workers/ingestion/src/**'
+      - 'workers/ingestion/wrangler.jsonc'
       - '.github/workflows/evaluations.yml'
   pull_request:
     paths:
       - 'evaluations/ocr/**'
+      # test_assemble_cache.py imports the real ingestion OCR parser and settings.
+      - 'workers/ingestion/src/**'
+      - 'workers/ingestion/wrangler.jsonc'
       - '.github/workflows/evaluations.yml'
   workflow_dispatch:
 
