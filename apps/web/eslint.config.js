@@ -14,5 +14,7 @@ export default ts.config(
       parser: vueParser,
       parserOptions: { parser: ts.parser },
     },
+    // TypeScript already reports undefined identifiers in SFCs.
+    rules: { 'no-undef': 'off' },
   },
 )
