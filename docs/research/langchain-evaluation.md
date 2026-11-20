@@ -206,7 +206,7 @@ Para la memoria, la narrativa más defendible es la B: "se adoptan las abstracci
 Se retira `langchain-core` del lock y se mantienen los `Protocol` actuales.
 
 - **Pro:** mínimo bundle y arranque; control total; ya está implementado y probado.
-- **Contra:** se pierde el vocabulario estándar y la integración natural con trazas y evaluación de componentes. Además contradice la decisión aprobada en `INVESTIGACION.md` ("RAG lineal: langchain-core").
+- **Contra:** se pierde el vocabulario estándar y la integración natural con trazas y evaluación de componentes. Además contradice la decisión aprobada por el usuario (RAG lineal: `langchain-core`, ver `docs/IMPLEMENTATION_STATUS.md`).
 
 ### 6.2 Opción B (recomendada): langchain-core como columna vertebral, con adaptadores propios
 

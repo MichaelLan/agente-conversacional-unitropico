@@ -1,138 +1,90 @@
 # Estado de implementación
 
-Documento operativo para retomar el proyecto. Se actualiza tras cada grupo de cambios significativo.
-Fuente de intención: `ARQUITECTURA.md`. Este archivo prevalece sobre `TRASPASO_SESION.md` (histórico, ignorado por Git) y sobre cualquier "estado observado" de otros documentos cuando discrepen.
+Estado ACTUAL y compacto para retomar el proyecto. Fuente de intención: `ARQUITECTURA.md`. Este archivo prevalece sobre cualquier "estado observado" de otros documentos. El detalle de cada contrato y componente está en el README de su proyecto. Última actualización: 2026-11-20.
 
-Última actualización: 2026-11-18. Trabajo de la sesión commiteado en 8 commits firmados (`df3af9c`..`9b0f138`), sin push.
+## 0. Cómo trabajar en este proyecto (OBLIGATORIO)
 
-## 1. Estado por componente
+- **El agente principal NUNCA implementa.** Siempre delega en subagentes: Opus para investigación, implementación compleja y revisiones críticas; Sonnet para tareas sencillas o moderadas. Cada subagente recibe propiedad EXCLUSIVA de archivos y criterios de aceptación. El principal solo define tareas y contratos, revisa diffs, ejecuta verificaciones e integra. Informes breves; esperar informes antes de depender de ellos. Python siempre con `uv`.
+- **Commits**: en inglés, cortos, `git commit -s -S`, sin Co-Authored-By. El usuario desbloquea GPG en su terminal: `export GPG_TTY=$(tty); echo test | gpg --clearsign -u DAC79F37ECE1197C >/dev/null`.
+- **Memoria**: guardar decisiones y estado importantes en Engram: `engram save … --project agente-conversacional-unitropico`.
+- **Límites**: no leer `.env`; no gastos, despliegues, migraciones remotas ni borrado de datos sin autorización expresa. No inventar IDs de modelo, métricas ni afirmar MVP terminado. Código y documentos locales son la fuente de verdad.
+- **Ejecutar comandos en la terminal del usuario**: `hc send` NO sirve para shells (envuelve en `<hc …>`). Usar `hc keys t21 b a s h space a z p . s h enter` con un envoltorio `azp.sh` en la raíz (script con `exec bash <ruta real>`, no symlink) y leer solo logs, NUNCA la pantalla (puede contener claves). Borrar `azp.sh` al terminar.
 
-| Componente | Estado | Resumen | Tests locales |
+## 1. Traspaso actual
+
+- Último commit: `630c26e`; 31 commits por delante de `origin/main`, **sin push**.
+- **Sin commitear** (ronda OCR alternativo/Azure): `evaluations/ocr/{alt_ocr.py, alt_ocr_v2.py, final_sources.py, final_corrections.py, prepare_alt_v2.py, pyproject.toml, README.md, tests/test_alt_ocr*.py}`, `evaluations/ocr/reports/{alt-ocr-pilot-v1-comparison.*, alt-ocr-v2-audit.*, selective-ocr-v1-audit.*}`, `docs/research/ocr-alternatives.md`. Commits propuestos: `feat(ocr): add Azure OCR v2 pipeline and audits` y `docs: consolidate status`. **No commitear `evaluations/rag/reports/`** (salidas de humo).
+- **Tarea posiblemente en curso** (agente sobre `evaluations/ocr/**`): ensamblar la caché final (`evaluations/ocr/.artifacts/ingestion-cache-v2/` + `upload-plan.md`) y las semillas (`.artifacts/corrections-seed-v1/{corrections.json,page_overrides.json}` + `seed_admin.py`), validando las 120 correcciones con el código real de la ingesta sobre texto preparado. Comprobar `git status`/`.artifacts`; si no terminó, relanzar con el plan `final_source_plan` de `reports/alt-ocr-v2-audit.json`.
+- **Siguiente para el usuario**: comprar Workers Paid y desplegar con `docs/DEPLOYMENT.md` (orden ingestion → rag → api → web); precargar caché en R2, subir los 7 PDF por el panel, `seed_admin.py --apply`, reprocesar, revisar, publicar y ejecutar la evaluación.
+
+## 2. Estado por componente
+
+| Componente | Estado | Qué hace | NO verificado |
 |---|---|---|---|
-| `apps/web` | Implementado; verificado con Playwright (Chromium headless) contra API falsa | Chat público estilo Nuxt UI con sidebar de FAQ de ejemplo (`FAQ_IS_PLACEHOLDER=true`), respuestas en texto plano, citas desplegables, reintentar, aria-live, estado solo en memoria. Panel admin en `/admin/` (multipágina Vite; token solo en memoria) con revisión del texto extraído y correcciones OCR. Worker `unitropico-web` (Static Assets + proxy `/api/*`, CSP en `_headers`). Mobile first (≥44 px táctil, inputs 16 px, safe areas, `dvh`; admin en tarjetas en móvil) y PWA instalable por app (`/` y `/admin/`: manifest, iconos propios, SW escrito a mano que solo cachea el shell y nunca `/api`; Lighthouse 11.7.1 PWA/a11y/best-practices = 1 en `/` y login admin). Sin verificar en dispositivos iOS/Android reales. | 94 node:test; lint, typecheck, build |
-| `apps/api` | Implementado | `GET /health`, `POST /retrieval/query`, `POST /chat` (contrato v1, proxy al RAG por service binding), `/admin/*` (contrato 4b, Bearer `ADMIN_TOKEN`, D1 + R2 + Workflow binding). App compuesta una vez por isolate. | 520 pytest; Ruff |
-| `apps/rag` | Implementado | `POST /answer` (v1) y `/retrieval/query`. Recuperación híbrida: D1 FTS5 (`unicode61 remove_diacritics 2`) + Vectorize + RRF k=60, `RETRIEVAL_MODE` hybrid/lexical/semantic. Generación `openai/gpt-6-luna` vía Vercel AI Gateway (json_schema strict, `reasoning_effort=low`). Validación de citas literales, revalidación de catálogo, abstención con `reason` y `referral`. Orquestación sobre `langchain-core` 1.8.3 (opción B): `ChunkRetriever(BaseRetriever)`, `GatewayEmbeddings`, `GeneratorChatModel(BaseChatModel)`, `ChatPromptTemplate` y cadena LCEL async; métricas por fase en log (`answer_metrics`). Seguimiento conversacional `FOLLOWUP_STRATEGY` none|concat (default, sin coste)|rewrite (1 llamada extra, para evaluación) y umbral opcional `MIN_RELEVANCE` sobre coseno de Vectorize (desactivado; abstiene con `no_evidence`). | 465 pytest; Ruff |
-| `workers/ingestion` | Implementado | Chunker estructural `structural-v1` + baseline `fixed-v1`. `IngestionWorkflow`: mark_processing → ocr (Firecrawl; reutiliza R2) → chunk → embed (reutiliza R2) → index Vectorize → finalize `review_required`/`ready`. Nunca publica; toda extracción nueva termina en `review_required`. | 200 pytest; Ruff |
-| `infra/d1` | Implementado | Migración `0001_initial.sql`: documentos, versiones con vigencia y sustitución, máquina de estados por trigger, chunks, FTS5, `processing_events`, vista `v_chunk_registry`. SQL canónico en `queries.sql`. | 103 unittest; aplicado en D1 local (antes de `text_corrections`) |
-| `infra/vectorize` | Diseñado | Índice `unitropico-chunks-1536`, cosine, metadatos `version_id`/`document_id`. Comandos documentados, no ejecutados. | — |
-| `evaluations/ocr` | Activo | Pilotos Firecrawl, corpus v2, auditoría visual de 216 páginas, OCR selectivo v1 (106 páginas) y ensamblado de caché para la ingesta. Ruff/pytest/CI propios. | 97 pytest |
-| `evaluations/rag` | Implementado, **sin resultados** | 55 preguntas candidatas **sin validar** (37 dev / 18 test). Harness HTTP: Recall@k, MRR, nDCG, abstención, exactitud de citas, latencia, export CSV para fidelidad humana. | 58 pytest |
-| CI | 7 workflows | `web`, `api`, `rag`, `ingestion`, `evaluations` (ocr), `evaluations-rag`, `integration`; filtros de paths (API/RAG/ingesta incluyen `infra/d1/**`). Sin despliegues. Solo api/rag/web han corrido en GitHub (sobre `fa23faf`). | — |
+| `apps/web` | Implementado | Chat público (Vue 3 + Nuxt UI) con FAQ de ejemplo, texto plano, citas, reintentar; panel `/admin/` (revisión de texto, correcciones y sustituciones); Worker `unitropico-web` (Static Assets + proxy `/api/*`, CSP); mobile first y PWA por app | Dispositivos iOS/Android reales, CSP en navegador, despliegue; probado con Playwright contra API falsa |
+| `apps/api` | Implementado | `/health`, `/retrieval/query`, `/chat` (proxy al RAG por service binding), `/admin/*` (Bearer `ADMIN_TOKEN`, D1 + R2 + Workflow), rate limiting | Bindings reales (D1/R2/Workflow, rate limit), service binding real |
+| `apps/rag` | Implementado | `/answer` y `/retrieval/query`: híbrido D1 FTS5 + Vectorize (RRF k=60), generación con citas literales validadas y abstención; `langchain-core` 1.8.3 (opción B); `FOLLOWUP_STRATEGY` none/concat/rewrite y `MIN_RELEVANCE` opcional | Vectorize real, gateway real (chat y embeddings) |
+| `workers/ingestion` | Implementado | Workflow: mark_processing → ocr (Firecrawl; reutiliza R2) → chunk (correcciones y sustituciones) → embed → index → finalize `review_required`/`ready`; nunca publica | Firecrawl y gateway desde el Worker, pasos chunk/embed/index en workerd, límites de producción |
+| `infra/d1` | Implementado | Migraciones, FTS5, máquina de estados por trigger, correcciones/sustituciones, `v_chunk_registry` | Nada creado en remoto |
+| `infra/vectorize` | Diseñado | Índice `unitropico-chunks-1536`, cosine | Sin emulación local; no creado |
+| `evaluations/ocr` | Activo | Pilotos, auditoría visual de 216 páginas, OCR selectivo Firecrawl, pilotos Azure y plan final de fuentes | Revisión humana de las páginas (ver §5) |
+| `evaluations/rag` | Implementado, **sin resultados** | Harness (Recall@k, MRR, nDCG, abstención, citas, latencia); 55 preguntas candidatas SIN validar (37 dev / 18 test) | Dataset y `document_map.json` |
+| CI | 7 workflows | `web`, `api`, `rag`, `ingestion`, `evaluations`, `evaluations-rag`, `integration`; sin despliegue ni secrets | Solo api/rag/web corrieron en GitHub (sobre `fa23faf`) |
 
-### Verificado vs no verificado
-- **Ejecutado en workerd local (`pywrangler dev --local`)**: RAG `/health`, `/retrieval/query` contra D1 local con FTS5 y catálogo; Workflow de ingesta registrado y fallo `config_missing` persistido en D1 local; migración D1 aplicada en local.
-- **Solo con fakes/sqlite en CPython**: transporte API→RAG por service binding, endpoints admin contra bindings reales, pasos chunk/embed/index del Workflow en workerd.
-- **No verificado**: Vectorize real (sin emulación local), gateway real (chat y embeddings), Firecrawl desde el Worker, recursos remotos, despliegue, render en navegador, límites de producción (1 MiB por paso, CPU, memoria, arranque).
+Ejecutado en workerd local (`pywrangler dev --local`): RAG `/health`, `/retrieval/query` con D1 local, Workflow registrado con fallo `config_missing` persistido, migración D1. Todo lo demás: fakes/sqlite en CPython. `deploy --dry-run` OK en los 4 Workers. Última verificación completa de suites: 2026-11-19/20 en cada proyecto (Ruff + pytest/node:test/unittest verdes; conteos en cada README).
 
-### Corpus
-- 7 PDF reales en `documents/documentos_bienestar/` (ignorado por Git), 216 páginas.
-- `evaluations/ocr/.artifacts/extraction-corpus-v2/`: 201 páginas con texto, todo `requires_review=true`, `publication_blocked=true`.
-- **15 páginas de la Convocatoria 2026-1 sin OCR.** El usuario confirmó en el Dashboard de Firecrawl un consumo total de **22 créditos** (= 20 de Res. 00137 + 2 del piloto 02): el lote de 15 páginas y el primer piloto **no se cobraron**. No borrar `execution/` (evidencia histórica). Un nuevo OCR de esas páginas queda autorizado por el usuario cuando haga falta ("si necesitas el OCR, úsalo"); se hará por el pipeline de ingesta o lo ejecutará el usuario (la clave está en `.env`, que los agentes no leen).
-- Defecto OCR conocido: Res. 00137 p18 dice "igual a 3.0"; el original dice "igual o superior a 3.0". Se corrige en la revisión con una corrección literal (ver §4) antes de publicar.
-- Contradicciones reales detectadas (útiles para evaluación): Res. CBU 002-2025 (25 días hábiles vs calendario); Jóvenes en Paz (Res. 00137 vs Documento Técnico); grupos Sisbén (Documento Técnico vs Res. CBU 002-2025).
-- No existen FAQs institucionales verificadas.
+## 3. Decisiones vigentes
 
-## 2. Decisiones vigentes
+### Stack y arquitectura
+- Monorepo de proyectos autónomos: sin pyproject/workspace/package.json raíz, sin contratos generados (tipos manuales por app). Sin despliegues automáticos desde CI.
+- Python 3.14 con uv (el `python3` del sistema es 3.12; usar el CPython 3.14 de uv), FastAPI, Pydantic 2.14.3, Ruff 0.17.4, pytest 9.2.0. `pywrangler` exige uv ≥ 0.13.4: `uvx --from uv==0.13.7` (0.13.9 en el README de ingesta), aislado, sin actualizar el global. API, RAG e ingesta son Cloudflare Python Workers (`uv.lock` host + `pylock.toml` WASM); flag `python_workers_314`; workers-py 1.17.9 / runtime SDK 1.9.6. La ingesta no usa FastAPI; FastAPI 0.162.2 en API/RAG.
+- Settings solo en la composición (`main.py`/`worker.py`); puertos con Protocol; docstrings en todo.
+- Web: Vue 3.5.45, Vite 8.3.6, plugin-vue 6.0.10, Nuxt UI 4.12.0 standalone, Tailwind 4.3.5, TS 6.0.3 (typescript-eslint exige <6.1; NO TS 7), vue-tsc 3.3.14, ESLint 10.14.0, pnpm. Sin Router, Pinia, cliente HTTP externo ni framework de tests adicional (node:test). Node 24.15.0 / pnpm 12.18.0.
+- LangChain opción B (`docs/research/langchain-evaluation.md`): `langchain-core` 1.8.3 con adaptadores propios; sin langgraph, langchain-openai, classic, community ni text-splitters.
 
-### Arquitectura y stack
-- Monorepo de proyectos autónomos; sin pyproject/workspace/package.json raíz; sin contratos generados; tipos manuales por app.
-- Python 3.14, uv (0.13.7 en CI y locks; `pywrangler` requiere ≥ 0.13.4 → `uvx --from uv==0.13.9` aislado), FastAPI (API y RAG; la ingesta no usa FastAPI), Pydantic, Ruff, pytest. API, RAG e ingesta son Cloudflare Python Workers (`uv.lock` host + `pylock.toml` WASM).
-- Settings solo en la composición (`main.py`/`worker.py`); logger única excepción transversal; puertos con Protocol.
-- Web: Vue 3 + Vite + Nuxt UI 4.12.0 standalone + TS 6.0.3 + pnpm. Sin Router, Pinia, cliente HTTP externo ni framework de tests adicional (node:test).
-- Sin despliegues automáticos desde CI.
+### Decisiones del usuario
+- Generador `openai/gpt-6-luna` y embeddings `openai/text-embedding-3-small` (1536 dims) vía Vercel AI Gateway (generador verificado en catálogo; inferencia NO probada).
+- Respuestas en texto plano; chat con sidebar de FAQ; auth admin por token secreto en la API; web mobile first e instalable (PWA sin dependencias, SW propio que nunca cachea `/api`); ingesta con Python Worker + Cloudflare Workflow.
+- Plan Workers Paid: lo comprará el usuario. Publicación siempre manual.
 
-### Decisiones del usuario (2026-11-18)
-- Generador `openai/gpt-6-luna` vía Vercel AI Gateway (ID verificado en catálogo; inferencia NO probada).
-- Embeddings `openai/text-embedding-3-small`, 1536 dims, vía Vercel AI Gateway.
-- Respuestas en **texto plano**; layout de chat inspirado en Nuxt UI con sidebar de **preguntas frecuentes**.
-- Auth admin: **token secreto en la API** (Bearer, comparación en tiempo constante).
-- Web **mobile first** (no solo responsive) e **instalable** (PWA sin dependencias: manifest por app, service worker propio que solo cachea el shell y nunca `/api`). Panel admin con el mismo lenguaje visual del chat (referencia Nuxt UI).
-- Ingesta: **Python Worker + Cloudflare Workflow**.
-- LangChain: **opción B** de `docs/research/langchain-evaluation.md`: `langchain-core` 1.8.3 como columna vertebral (BaseRetriever, Embeddings, BaseChatModel, ChatPromptTemplate, LCEL async) sobre adaptadores propios; validaciones propias se conservan; sin langgraph, langchain-openai, classic, community ni text-splitters por ahora.
+### Decisiones de datos
+- Vectorize: id = `chunks.id` (`{sha16(version_id‖chunker_version)}:{ordinal:04d}:{sha12(text)}`); upsert por el Workflow; publicar/despublicar solo cambia D1 (el RAG revalida siempre); `deleteByIds` al reprocesar. OCR y embeddings persistidos en R2.
+- Publicar: `ready`/`unpublished` → `published` con `requires_review=0`; no exige embeddings en todos los chunks. Convocatorias vencidas se recuperan con su vigencia y el modelo debe advertirlo. `supersedes_version_id` 1:1.
+- `source_r2_key = raw/{sha256}.pdf` UNIQUE global (409 `source_registered_elsewhere`). En D1, `meta.changes` incluye filas de triggers: no comparar con `== 1`.
+- Todo OCR requiere revisión humana antes de publicar (Firecrawl y Azure alteran o inventan contenido).
 
-### Decisiones de datos (orquestador)
-- Vectorize: id = `chunks.id` (`{sha16(version_id‖chunker_version)}:{ordinal:04d}:{sha12(text)}`, 35 bytes); upsert por el Workflow al indexar; publicar/despublicar solo cambia D1 (el RAG revalida siempre); `deleteByIds` al reprocesar. Embeddings y OCR persistidos en R2 para no pagarlos dos veces.
-- Publicación siempre manual (`ready`/`unpublished` → `published` con `requires_review=0`).
-- Convocatorias vencidas: se recuperan con su vigencia y el modelo debe advertirlo.
-- `supersedes_version_id` 1:1 en el MVP.
-- Unicidad del original: `source_r2_key = raw/{sha256}.pdf` es UNIQUE global → el mismo PDF no puede registrarse en dos documentos (409 `source_registered_elsewhere`).
-- Publicar no exige embeddings en todos los chunks.
-- OCR del corpus (usuario, 2026-11-19): reutilizar el texto ya extraído (corpus v2) solo en las páginas que sirvan al 100 %; el resto se reprocesa con Firecrawl. Auditoría visual completa (`evaluations/ocr/reports/extraction-quality-audit.{md,json}`): 66 ok, 44 minor, 91 defect, 15 missing; ningún documento sirve al 100 % tal cual; de las 22 páginas ya procesadas por Firecrawl, 14 tienen defectos sustantivos. **El usuario autorizó 106 créditos** (86 defect/missing + 20 con errores puntuales). OCR selectivo fuera del Worker (fragmentos con Poppler, envío ejecutado por el usuario con su clave, auditoría visual de las páginas nuevas, ensamblado de la caché en formato del paso `ocr` y precarga en R2) para no pagar los documentos completos. Preparado (`evaluations/ocr/selective_*`, `assemble_cache.py`; 97 tests): 7 lotes / 106 páginas en `.artifacts/selective-ocr-v1/` verificados contra los originales; Envío 2026-11-19: lotes 01–03 completos (45 págs., 45 créditos declarados); lote 04 network_error SIN cobro (el usuario confirmó 67 créditos totales en el Dashboard = 22 + 45); 05–07 sin enviar. Auditoría de las 45 páginas nuevas (`reports/selective-ocr-v1-audit.*`): 10 usables tal cual, 32 con 118 correcciones literales, 3 a revisión manual; Firecrawl inventa y altera contenido → todo OCR requiere revisión antes de publicar. Hará falta una vía para sembrar la caché de extracción en R2 con el texto reutilizado (formato compatible con el paso `ocr`) para que el Workflow no pague esas páginas.
-- En D1, `meta.changes` incluye filas tocadas por triggers: no comparar con `== 1`.
+## 4. Contratos (detalle en el README de la app)
 
-## 3. Contrato `/answer` (RAG) y `/chat` (API) — v1
+- **/answer (RAG) y /chat (API) v1**: `{question 1..500, history? ≤6}` → `{status answered|abstained, answer, reason, citations[], referral}`; `answered` ⇒ ≥1 cita y `reason` null; `abstained` ⇒ sin respuesta/citas, con `reason` y `referral`; 503 `unavailable`, 502 RAG inválido, 422; metadatos de cita solo desde D1, quote literal ≥12 caracteres. `usage` no es parte de v1 (medir costo exigiría v2). Detalle: `apps/rag/README.md`, `apps/api/README.md`.
+- **Admin v1** (`/admin/*`, Bearer `ADMIN_TOKEN`; 503 `admin_disabled`, 401, 503 `storage_unavailable`): uploads (PDF ≤ 25 MB), documentos/versiones, PATCH, publish/unpublish/reprocess (409 `ingestion_in_progress`), chunks. Payload del Workflow `{version_id, document_id, source_r2_key, source_sha256}`. Detalle: `apps/api/README.md`.
+- **Correcciones literales**: por versión y página, `find_text` debe aparecer exactamente una vez; se aplican al reprocesar (paso `chunk`) sin repetir OCR; `corrections_dirty` bloquea revisar/publicar (409 `corrections_pending`) hasta reprocesar; tope 100 activas por versión; `Cf` → 422. Detalle: `apps/api/README.md`, `workers/ingestion/README.md`.
+- **Sustitución de página**: D1 `page_overrides` (una activa por versión/página, ≤ 20000 caracteres), aplicada en `chunk` antes de las correcciones; `GET /admin/versions/{id}/pages?page=N` y CRUD `page-overrides`; mismo bloqueo `corrections_dirty`. Detalle: `apps/api/README.md`, `workers/ingestion/README.md`.
+- **Rate limiting** (API): bindings `CHAT_LIMITER` 20/60 s, `RETRIEVAL_LIMITER` 30/60 s, `ADMIN_AUTH_LIMITER` 10/60 s (solo 401), clave HMAC de IP (`RATE_LIMIT_SALT`), 429 `rate_limited` con `Retry-After: 60`, fail-open salvo `RATE_LIMIT_REQUIRED=true`; cuerpos > 64 KiB rechazados pronto. Binding real NO verificado; confirmar `namespace_id` 1001/1002/1003 libres antes de desplegar. Detalle: `apps/api/README.md`.
+- **Pendiente de comprobar**: en workerd real que el puente ASGI no lee el cuerpo cuando se responde antes (rechazo temprano de uploads).
 
-Petición (idéntica en ambos):
-```json
-{"question": "1..500 code points tras strip", "history": [{"role": "user|assistant", "content": "1..2000"}]}
-```
-`history` opcional (no `null`), máx. 6 elementos, extras prohibidos. No se persiste.
+## 5. OCR y corpus
 
-Respuesta 200:
-```json
-{
-  "status": "answered | abstained",
-  "answer": "texto plano en español | null",
-  "reason": "null | no_evidence | model_abstained | invalid_output | invalid_citation | stale_source",
-  "citations": [{"chunk_id": "", "document_id": "", "document_title": "", "version_id": "",
-                 "version_label": "str|null", "section": "str|null", "page_start": 1, "page_end": 1, "quote": ""}],
-  "referral": "texto de derivación | null"
-}
-```
-- `answered` ⇒ `answer` no nulo, ≥1 cita, `reason` null. `abstained` ⇒ `answer` null, sin citas, `reason` y `referral` no nulos.
-- 503 `{"status":"unavailable","referral":"..."}`; 502 en API si el RAG responde inválido; 422 validación. En la API además: 429 `{"error":{"code":"rate_limited","message":...}}` con `Retry-After`, y 413/411 tempranos.
-- Metadatos de cita solo desde D1; quote literal (espacios normalizados, ≥12 caracteres visibles).
-- `usage` (tokens) no forma parte de v1: para medir costo desde el harness haría falta v2.
+- 7 PDF en `documents/documentos_bienestar/` (ignorado por Git), 216 páginas. Hay contradicciones reales útiles para evaluación: Res. CBU 002-2025 (25 días hábiles vs calendario), Jóvenes en Paz (Res. 00137 vs Documento Técnico), grupos Sisbén (Documento Técnico vs Res. CBU 002-2025). No existen FAQs institucionales verificadas.
+- **Plan final de fuentes (216 páginas)**: 110 reutilizables (102 pdftotext + 8 Firecrawl previo) + 34 Firecrawl lotes 01–03 + 7 Azure piloto + 65 Azure v2. **120 correcciones literales obligatorias en 59 páginas** (21 opcionales cosméticas) y **1 sustitución de página** (Documento Técnico p54, diagrama de Insumos; BPIN corregido a 202300000000204). Incluye Res. 00137 p18 ("igual o superior a 3.0") y releer Res. CBU p3 tras sus 17 correcciones. Evidencia: `evaluations/ocr/reports/alt-ocr-v2-audit.{md,json}` (`final_source_plan`), `alt-ocr-pilot-v1-comparison.*`, `selective-ocr-v1-audit.*`, `extraction-quality-audit.*`; rationale de proveedores en `docs/research/ocr-alternatives.md`.
+- **Gasto OCR**: Firecrawl 67 créditos consumidos de 106+22 autorizados; no hace falta más (lotes 04–07 sin enviar y descartados). Azure Document Intelligence F0 (`unitropico-ocr`, westus2): 79 páginas de las 500/mes gratuitas.
+- **Salvaguardas Firecrawl vigentes** (detalle en `evaluations/ocr/README.md`): NUNCA reenviar `send`, borrar ledger/`execution/` ni regenerar lotes; los scripts `pilot.py`, `remaining_send.py`, `selective_send.py` y `alt_ocr.py send` hacen llamadas de pago y solo los ejecuta el usuario con su clave.
+- **Por verificar por humanos**: DT p54 (transcripción del diagrama de Insumos; verificación obligatoria), las páginas con correcciones, comparación final contra los originales antes de publicar, y política de publicación del OCR revisado.
 
-## 4. Contrato admin (API) — v1
+## 6. Pendientes y bloqueos
 
-Rutas `/admin/*` con `Authorization: Bearer <ADMIN_TOKEN>`. Sin token configurado: 503 `admin_disabled`; token inválido: 401; sin bindings: 503 `storage_unavailable`. Errores `{"error":{"code","message"}}`.
-- `POST /admin/uploads` — cuerpo `application/pdf` ≤ 25 MB, magic `%PDF-`; query `title`, `document_type`, `version_label`, `document_id?`. R2 `raw/{sha}.pdf` → D1 `uploaded` → Workflow `ver_{version_id}`. 201 nuevo / 200 existente / 409 `source_registered_elsewhere`; si falla el lanzamiento, 201 con `ingestion.outcome: "failed"` (recuperable con reprocess).
-- `GET /admin/documents`, `GET /admin/versions/{id}` (con `processing_events` y estado de la instancia).
-- `PATCH /admin/versions/{id}` — `title`, `document_type`, `version_label`, `issued_at`, `effective_from`, `effective_until`, `supersedes_version_id`, `requires_review` (false: `review_required`→`ready`; true: `ready`/`unpublished`→`review_required`). 409 si la versión está publicada.
-- `POST .../publish` (desde `ready`/`unpublished`, revisada), `.../unpublish`, `.../reprocess` (pone `requires_review=1`; el Workflow pasa a `processing`; 409 `ingestion_in_progress`).
-- Payload Workflow: `{version_id, document_id, source_r2_key, source_sha256}`.
-- Revisión y correcciones OCR: `GET /admin/versions/{id}/chunks?offset&limit` (≤100); `GET|POST /admin/versions/{id}/corrections` (`{page_number, find_text 1..500, replace_text 0..500, reason 1..300}`); `DELETE /admin/versions/{id}/corrections/{cid}` (borrado lógico). Crear/borrar devuelve la versión a `review_required`; 409 si está publicada. Se aplican al reprocesar (paso `chunk`, sin volver a pagar OCR): `find_text` debe aparecer exactamente una vez en la página (espacios equivalentes) o la versión falla con `correction_not_applicable`. Eventos con paso `correct`; `correction_ids` en el JSONL de chunks.
-- `corrections_dirty: bool` en las versiones (listado, detalle y respuestas de correcciones): lo ponen a 1 triggers de D1 en cada alta/baja de corrección (`corrections_rev` +1) y solo lo limpia el paso `chunk` si `corrections_rev` no cambió desde que leyó las correcciones. Mientras sea true: `PATCH requires_review=false` y `publish` → 409 `corrections_pending` (además, trigger de D1 impide publicar). Las correcciones se aplican sobre el texto preparado que ve el administrador (tablas convertidas, cabeceras repetidas eliminadas). `GET .../corrections` incluye `match_rule`. Unicidad activa (versión, página, find_text) e inserción con tope de 100 en una sola sentencia; caracteres Unicode `Cf` → 422.
+**Usuario**: Workers Paid y despliegue; crear D1/R2/Vectorize y aplicar migración; ejecutar `seed_admin.py --apply` y las cargas con su clave; revisar OCR y publicar; validar el dataset de evaluación (y congelar split test) y las FAQs; decidir política de publicación del OCR; autorizar gasto de inferencia/embeddings reales; colección local de iconos (hoy Nuxt UI usa api.iconify.design); desbloquear GPG para commits.
 
-## 4c. Contrato de sustitución de página (v1, 2026-11-19)
+**Agentes**: terminar caché final y semillas (§1); commitear la ronda OCR; revisión crítica final de la documentación y ejecución de suites antes de desplegar.
 
-Para páginas que las correcciones literales no pueden arreglar (diagramas, tablas como imagen, texto inventado por el OCR).
-- D1 `page_overrides` (id `pov_<32 hex>`, version_id, page_number ≥1 y ≤ page_count, text 1..20000, reason 1..300, created_at, deleted_at; borrado lógico; como máximo UNA activa por (versión, página); prohibido en versiones publicadas). Altas/bajas ponen `corrections_dirty=1` y suben `corrections_rev` (mismo mecanismo que las correcciones: bloquea revisar/publicar hasta reprocesar).
-- Ingesta (paso `chunk`): tras preparar las páginas y ANTES de las correcciones literales, la página con sustitución activa toma el texto de la sustitución pasado por la misma preparación de una página (normalización, tablas Markdown); después se aplican las correcciones literales de esa página si las hay. Evento `correct` con `override_applied id=… page=…`. El paso guarda en R2 `pages/{version_id}/{chunker_version}.json` el texto preparado final por página con su origen (`ocr` | `override`) y los ids aplicados.
-- API admin:
-  - `GET /admin/versions/{id}/pages?page=N` → `{"version_id","page_number","page_count","text","source":"ocr|override","override_id"|null,"corrections_applied":[ids],"chunker_version"}` (lee el JSON de R2; 404 `page_text_unavailable` si la versión no se ha procesado con el pipeline que lo genera).
-  - `GET /admin/versions/{id}/page-overrides` → `{"version_id","overrides":[O]}`, O = `{"id","version_id","page_number","text","reason","created_at","deleted_at"|null,"active"}`.
-  - `POST /admin/versions/{id}/page-overrides` `{"page_number","text","reason"}` → 201 `{"override":O,"version_status","requires_review":true,"corrections_dirty":true,"reprocess_required":true,"message"}`; 409 `version_published` | `override_exists` (ya hay una activa para esa página; bórrala primero); 422 `invalid_request` | `page_out_of_range`.
-  - `DELETE /admin/versions/{id}/page-overrides/{oid}` → 200 misma forma con `active:false`; idempotente; 404/409.
-  - Mismo Bearer, rechazo temprano y sobre de error. Caracteres Cc (salvo `\n` y `\t`) y Cf → 422.
-  - Implementado (backend y UI, 2026-11-19). Desviaciones: `GET pages` con N fuera de rango → 422 `page_out_of_range`, sin `page` → 422 `invalid_request`; límite temprano de 256 KiB solo para `POST …/page-overrides`; una sustitución sobre página > page_count en la ingesta falla con `correction_not_applicable`.
+**Siguientes pasos**: (1) cerrar caché final + semillas y commitear; (2) despliegue y recursos (`docs/DEPLOYMENT.md`); (3) precarga en R2, subida de PDFs, semillas, reprocesar; (4) revisión humana y publicación; (5) completar `evaluations/rag/datasets/document_map.json` y evaluar (léxico vs semántico vs híbrido; estructural vs fijo); (6) validación humana del dataset, FAQs verificadas y pruebas reales de gateway/Vectorize.
 
-## 5. Revisión crítica (2026-11-18) — corregida
-Revisión independiente de auth admin, upload, Workflow y panel: sin hallazgos críticos. Corregidos: rechazo temprano de `/admin/uploads` en `Default.fetch` antes de leer el cuerpo (503/401/411/413); reprocesar desde `processing`/`extracted`; reprocess que da 409 no modifica la base; `START_PROCESSING` fuerza `requires_review=1`; OCR truncado no se cachea y la clave incluye `max_pages` (`ocr/{sha}/{ocr_version}-p{max_pages}.json`); PATCH de título bloqueado si otra versión está publicada; `supersedes` mismo documento y sin ciclos; límite 50 MB coherente; `processing_events` append-only también ante DELETE; refresco del panel acotado. Pendiente: comprobar en workerd real que el puente ASGI no lee el cuerpo cuando se responde antes.
+## 7. Referencias
 
-## 6. Siguientes tareas recomendadas
-1. ✔ CI de integración: proyecto `tests/integration/` (22 tests, `integration.yml`); `apps/rag` ya no importa `apps/api`.
-2. ✔ Rate limiting: bindings `CHAT_LIMITER` (20/60 s), `RETRIEVAL_LIMITER` (30/60 s) y `ADMIN_AUTH_LIMITER` (10/60 s, solo 401) con clave HMAC de `CF-Connecting-IP` normalizada (IPv4 completa, IPv6 /64; `RATE_LIMIT_SALT`); rechazo temprano con Bearer en todo `/admin/*`, 429 `rate_limited` con `Retry-After: 60`, fail-open salvo `RATE_LIMIT_REQUIRED=true`; 413/411 tempranos para cuerpos > 64 KiB. Binding real NO verificado; confirmar `namespace_id` 1001/1002/1003 libres antes de desplegar.
-3. ✔ Despliegue same-origin de la web: Worker `unitropico-web` con Static Assets (`dist/`) y `run_worker_first: ["/api/*"]`; `worker/index.js` reenvía por service binding `API` solo `POST /api/chat`, `GET|HEAD /api/health` y `GET|POST|PATCH /api/admin/*` (sin `/api/retrieval/query`), conservando cabeceras (`CF-Connecting-IP`, `Authorization`) y cuerpo; CSP y cabeceras en `public/_headers`; 429 tratado en el chat. Verificado con dos `wrangler dev --local` enlazados; despliegue y CSP en navegador NO verificados.
-   ✔ Workers renombrados: `unitropico-web`, `unitropico-api`, `unitropico-rag`, `unitropico-ingestion`; bindings `apps/web`→`unitropico-api`, `apps/api`→`unitropico-rag`.
-4. ✔ Runbook de despliegue `docs/DEPLOYMENT.md`; `deploy --dry-run` OK en los 4 Workers (web 2,6 KiB; api 9,6 MiB; rag 21,8 MiB; ingesta 224 KiB).
-5. Con autorización de gasto/recursos: crear D1/R2/Vectorize, aplicar migración, cargar los 7 PDF por el panel, revisar OCR (corregir Res. 00137 p18), publicar, completar `evaluations/rag/datasets/document_map.json` y ejecutar la evaluación en dev (léxico vs semántico vs híbrido; estructural vs fijo).
-6. Validación humana del dataset y congelación del split test; FAQs verificadas.
-
-## 7. Bloqueos y pendientes de aprobación del usuario
-- Gasto: inferencia y embeddings reales, creación de recursos Cloudflare, despliegue. Plan Workers Paid: el usuario lo comprará.
-- Política de publicación del OCR revisado (¿basta revisión del investigador?).
-- Validación humana del dataset de evaluación y de las FAQs.
-- Colección local de iconos (hoy Nuxt UI los descarga de api.iconify.design).
-- Commits: autorizados por componente (inglés, `-s -S`, sin Co-Authored-By); requieren desbloquear el gpg-agent del usuario.
-
-## 8. Validaciones ejecutadas (2026-11-18, local, por el orquestador)
-- api: Ruff OK, 420 passed. rag: Ruff OK, 428 passed (13 DeprecationWarning de LangSmith). ingestion: Ruff OK, 170 passed. integration: Ruff OK, 22 passed. evaluations/rag: Ruff OK, 58 passed. evaluations/ocr: Ruff OK, 62 passed. infra/d1: 83 unittest OK. web: lint, typecheck, 71 tests, build (genera `dist/admin/index.html`) OK.
-- YAML de workflows validado localmente.
-
-## 9. Referencias
-- `docs/research/python-workflows-bindings.md` — Workflows Python, bindings D1/R2/Vectorize, fetch y multipart.
-- `docs/research/langchain-evaluation.md` — compatibilidad de LangChain en Workers y recomendación.
-- `infra/README.md`, `infra/d1/queries.md`, `infra/vectorize/README.md`.
-- README de cada proyecto.
+- `ARQUITECTURA.md` — intención del usuario (no modificar sin su orden).
+- `docs/DEPLOYMENT.md` — runbook de despliegue (orden, recursos, secretos, dry-run).
+- `docs/research/langchain-evaluation.md` — compatibilidad de LangChain en Workers y opción B.
+- `docs/research/python-workflows-bindings.md` — Workflows Python, bindings D1/R2/Vectorize, límites.
+- `docs/research/ocr-alternatives.md` — comparativa de OCR y justificación de Azure.
+- `apps/{api,rag,web}/README.md`, `workers/ingestion/README.md` — contratos, configuración y pruebas de cada proyecto.
+- `infra/README.md`, `infra/d1/queries.md`, `infra/vectorize/README.md` — esquema D1, consultas canónicas y diseño de Vectorize.
+- `evaluations/ocr/README.md` y `evaluations/ocr/reports/` — herramientas y evidencia del OCR; `evaluations/rag/README.md` — harness y dataset.

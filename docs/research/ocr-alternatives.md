@@ -242,7 +242,7 @@ Para Azure F0, además, un PDF por página.
    - **Alucinaciones**: contenido que no está en la imagen (cifra, palabra, idioma, fila, cabecera). Es **criterio eliminatorio**. Se cuentan aparte de los errores de lectura.
    - **Omisiones** de contenido sustantivo.
    - **Autocorrecciones** de erratas del original.
-   - **Hechos críticos exactos**: lista cerrada por página. Ejemplos: fechas del cronograma de p12–14; los cuatro % de p18; los valores 2010 de p20; los seis % de p22; BPIN `2023000000000204`, ley, presupuesto y resolución de p54; montos y fechas de p3. Se mide el % de hechos transcritos carácter a carácter.
+   - **Hechos críticos exactos**: lista cerrada por página. Ejemplos: fechas del cronograma de p12–14; los cuatro % de p18; los valores 2010 de p20; los seis % de p22; BPIN `202300000000204` (15 dígitos; corregido el 2026-11-20, antes figuraba con un cero de más), ley, presupuesto y resolución de p54; montos y fechas de p3. Se mide el % de hechos transcritos carácter a carácter.
    - **Estructura de tablas**: cada fecha queda en la fila de su actividad; las celdas combinadas se conservan (`colspan`/`rowspan`) y no se duplican ni se inventan fechas.
    - **Utilidad de la confianza** (Azure, Mistral, Tesseract): de las palabras erróneas, qué % tiene confianza < 0,8 (sensibilidad) y qué % de las palabras con confianza baja es realmente erróneo (precisión). Si la confianza detecta los errores, la revisión humana puede concentrarse en ellos.
 3. **Regla de decisión** para procesar las 61 páginas restantes:
