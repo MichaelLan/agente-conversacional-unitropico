@@ -447,7 +447,7 @@ class AzureFlowTests(Base):
         transport = FakeTransport(
             [
                 FakeResponse(202, b"", {"Operation-Location": LOCATION}),
-                FakeResponse(429, b"{}"),
+                FakeResponse(500, b"{}"),
             ]
         )
         self.assertEqual(1, self.send("azure", transport))
@@ -465,6 +465,171 @@ class AzureFlowTests(Base):
         self.assertEqual(1, self.send("azure", transport))
         self.assertEqual("invalid_result", self.result("azure")["category"])
         self.assertTrue((self.folder("azure") / "response.raw").exists())
+
+
+def poll_throttle(status=429, retry="7"):
+    headers = {"Retry-After": retry} if retry is not None else {}
+    return FakeResponse(status, b"{}", headers)
+
+
+class ThrottleTests(Base):
+    def test_polling_429_with_retry_after_continues_and_completes(self):
+        transport = FakeTransport(
+            [
+                FakeResponse(202, b"", {"Operation-Location": LOCATION}),
+                poll_throttle(429, "7"),
+                poll_throttle(503, None),
+                FakeResponse(200, js(azure_body())),
+            ]
+            + azure_ok_replies(1)
+        )
+        phases = []
+        real = a.log_phase
+
+        def spy(phase, *args, **kwargs):
+            phases.append(phase)
+            real(phase, *args, **kwargs)
+
+        with patch.object(a, "log_phase", spy):
+            self.assertEqual(0, self.send("azure", transport))
+        self.assertEqual("complete", self.result("azure")["state"])
+        self.assertEqual(2, phases.count("poll_throttled"))
+        posts = [r for r in transport.requests if r.get_method() == "POST"]
+        self.assertEqual(2, len(posts))  # one per page, none repeated
+        self.assertGreaterEqual(self.clock.now, 3 + 7 + 5)  # retry-after, then backoff
+
+    def test_backoff_sequence_without_retry_after(self):
+        self.assertEqual(5.0, a.throttle_wait({}, 0))
+        self.assertEqual(10.0, a.throttle_wait({"Retry-After": "x"}, 1))
+        self.assertEqual(20.0, a.throttle_wait({}, 2))
+        self.assertEqual(60.0, a.throttle_wait({}, 9))
+        self.assertEqual(60.0, a.throttle_wait({"Retry-After": "900"}, 0))
+
+    def test_persistent_429_until_deadline_is_uncertain(self):
+        transport = FakeTransport(
+            [FakeResponse(202, b"", {"Operation-Location": LOCATION})]
+            + [poll_throttle(429, "30") for _ in range(100)]
+        )
+        self.assertEqual(1, self.send("azure", transport))
+        result = self.result("azure")
+        self.assertEqual("timeout", result["category"])
+        self.assertEqual(429, result["http_status"])
+        self.assertNotEqual("complete", result["state"])
+        self.assertLessEqual(self.clock.now, a.POLL_DEADLINE + 30)
+
+    def test_post_429_stays_uncertain_and_is_not_replayed(self):
+        transport = FakeTransport([poll_throttle(429, "1")])
+        self.assertEqual(1, self.send("azure", transport))
+        self.assertEqual(1, len(transport.requests))
+        self.assertEqual("uncertain", a.page_state(self.folder("azure"))[0])
+
+    def test_f0_pacing_between_calls_and_s0_has_none(self):
+        stamps = []
+        transport = FakeTransport(
+            azure_ok_replies(2), on_call=lambda r: stamps.append(self.clock.now)
+        )
+        self.assertEqual(0, self.send("azure", transport))
+        self.assertTrue(
+            all(
+                b - a_ >= a.F0_MIN_INTERVAL - 1e-9
+                for a_, b in zip(stamps, stamps[1:], strict=False)
+            )
+        )
+        pacer = a.Pacer(0, self.clock, self.clock.sleep)
+        before = self.clock.now
+        pacer.wait()
+        pacer.wait()
+        self.assertEqual(before, self.clock.now)
+        self.assertEqual(0.0, a.default_interval("azure", "s0", None))
+        self.assertEqual(3.5, a.default_interval("azure", "f0", None))
+        self.assertEqual(0.0, a.default_interval("mistral", "f0", None))
+        self.assertEqual(1.0, a.default_interval("azure", "f0", 1.0))
+
+
+class ResumeTests(Base):
+    def make_uncertain(self):
+        """Page 0 with a 202 stored, then a persistent 429 until the deadline."""
+        transport = FakeTransport(
+            [FakeResponse(202, b"", {"Operation-Location": LOCATION})]
+            + [poll_throttle(429, "30") for _ in range(100)]
+        )
+        self.assertEqual(1, self.send("azure", transport))
+        self.clock.now = 0.0
+
+    def resume(self, transport, **kwargs):
+        with contextlib.redirect_stderr(io.StringIO()):
+            return a.resume(
+                "azure",
+                SETTINGS,
+                transport=transport,
+                root=self.root,
+                clock=self.clock,
+                sleep=self.clock.sleep,
+                **kwargs,
+            )
+
+    def test_resume_completes_without_post_and_keeps_evidence(self):
+        self.make_uncertain()
+        folder = self.folder("azure")
+        before = (folder / "result.json").read_bytes()
+        transport = FakeTransport(
+            [poll_throttle(429, "2"), FakeResponse(200, js(azure_body()))]
+        )
+        self.assertEqual(0, self.resume(transport, page_id=self.pages[0]["page_id"]))
+        self.assertEqual({"GET"}, {r.get_method() for r in transport.requests})
+        self.assertEqual(
+            f"{ENDPOINT}/documentintelligence/documentModels/prebuilt-layout/"
+            f"analyzeResults/{OPERATION}?api-version=2024-11-30",
+            transport.requests[0].full_url,
+        )
+        self.assertEqual(before, (folder / "result.json").read_bytes())
+        self.assertTrue((folder / "resume-1.json").exists())
+        self.assertTrue((folder / "resume-1.raw").exists())
+        state, result = a.page_state(folder)
+        self.assertEqual("complete", state)
+        self.assertEqual("resume-1.raw", result["raw_file"])
+
+    def test_resume_without_operation_location_is_refused(self):
+        transport = FakeTransport([poll_throttle(401, None)])
+        self.assertEqual(1, self.send("azure", transport))  # POST 401: no operation
+        none = FakeTransport([])
+        self.assertEqual(1, self.resume(none, page_id=self.pages[0]["page_id"]))
+        self.assertEqual(1, self.resume(none))
+        self.assertEqual([], none.requests)
+        self.assertFalse((self.folder("azure") / "resume-1.json").exists())
+
+    def test_resume_refuses_complete_not_started_and_unknown_pages(self):
+        self.assertEqual(0, self.send("azure", FakeTransport(azure_ok_replies(2))))
+        none = FakeTransport([])
+        self.assertEqual(1, self.resume(none, page_id=self.pages[0]["page_id"]))
+        self.assertEqual(1, self.resume(none, page_id="nope"))
+        self.assertEqual(1, self.resume(none))
+        self.assertEqual([], none.requests)
+
+    def test_send_blocked_when_uncertain_and_unblocked_after_resume(self):
+        self.make_uncertain()
+        blocked = FakeTransport([])
+        self.assertEqual(1, self.send("azure", blocked))
+        self.assertEqual([], blocked.requests)
+        ok = FakeTransport([FakeResponse(200, js(azure_body()))])
+        self.assertEqual(0, self.resume(ok))
+        rest = FakeTransport(azure_ok_replies(1))
+        self.assertEqual(0, self.send("azure", rest))
+        posts = [r for r in rest.requests if r.get_method() == "POST"]
+        self.assertEqual(1, len(posts))  # only the page that had not started
+        summary = a.export("azure", self.root)
+        self.assertEqual(2, len(summary["pages"]))
+        self.assertEqual(CONTENT, summary["pages"][0]["markdown"])
+
+    def test_failed_resume_stays_uncertain_and_can_be_retried(self):
+        self.make_uncertain()
+        bad = FakeTransport([FakeResponse(404, b"{}")])
+        self.assertEqual(1, self.resume(bad))
+        self.assertEqual("uncertain", a.page_state(self.folder("azure"))[0])
+        good = FakeTransport([FakeResponse(200, js(azure_body()))])
+        self.assertEqual(0, self.resume(good))
+        self.assertTrue((self.folder("azure") / "resume-2.raw").exists())
+        self.assertEqual("complete", a.page_state(self.folder("azure"))[0])
 
 
 class ParsingTests(unittest.TestCase):

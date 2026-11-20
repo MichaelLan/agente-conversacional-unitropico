@@ -127,6 +127,11 @@ POST_TIMEOUT = 120
 GET_TIMEOUT = 60
 POLL_DEADLINE = 300.0
 POLL_MIN, POLL_MAX, POLL_DEFAULT = 2.0, 30.0, 3.0
+POLL_BACKOFF = (5.0, 10.0, 20.0, 60.0)  # 429/503 on polling without a valid Retry-After
+THROTTLE_MAX = 60.0
+F0_MIN_INTERVAL = 3.5  # F0: 20 calls/min counting POST and polling GET together
+RESUME_FILE = re.compile(r"resume-([0-9]+)\.json")
+OPERATION_ID = re.compile(r"[0-9A-Za-z-]{8,64}")
 # USD per page (docs/research/ocr-alternatives.md §3, retail prices checked 2026-11-19).
 COST_PER_PAGE = {"azure-f0": 0.0, "azure-s0": 0.01, "mistral": 0.004}
 SOURCE_LABEL = {"azure": "azure_layout_v1", "mistral": "mistral_ocr_v1"}
@@ -249,9 +254,14 @@ def load_manifest(root: Path = ROOT) -> dict:
     return manifest
 
 
-def preflight(root: Path = ROOT, repo: Path = REPO) -> list[tuple[dict, bytes]]:
-    """Verify manifest, fragment bytes and original identities; no key, no network."""
-    manifest = load_manifest(root)
+def preflight(
+    root: Path = ROOT, repo: Path = REPO, loader: Callable | None = None
+) -> list[tuple[dict, bytes]]:
+    """Verify manifest, fragment bytes and original identities; no key, no network.
+
+    ``loader`` lets a sibling campaign (alt_ocr_v2) validate its own manifest.
+    """
+    manifest = (loader or load_manifest)(root)
     payloads = []
     for page in manifest["pages"]:
         source = safe(repo / page["source_path"])
@@ -269,14 +279,30 @@ def preflight(root: Path = ROOT, repo: Path = REPO) -> list[tuple[dict, bytes]]:
 
 
 # --------------------------------------------------------------------- ledger
+def resume_indexes(folder: Path) -> list[int]:
+    """Indexes of the reservations ``resume-N.json`` in a page folder."""
+    found = (RESUME_FILE.fullmatch(path.name) for path in folder.iterdir())
+    return sorted(int(m.group(1)) for m in found if m)
+
+
 def page_state(folder: Path) -> tuple[str, dict | None]:
-    """not_started | complete | uncertain (folder without a complete result)."""
+    """not_started | complete | uncertain (folder without a complete result).
+
+    A page whose original result is uncertain becomes complete only through a
+    ``resume-N-result.json`` with state complete (the original is kept as is).
+    """
     if not folder.exists():
         return "not_started", None
     result_path = folder / "result.json"
     result = decode(safe(result_path).read_bytes()) if result_path.exists() else None
     if result is not None and result.get("state") == "complete":
         return "complete", result
+    for index in reversed(resume_indexes(folder)):
+        path = folder / f"resume-{index}-result.json"
+        if path.exists():
+            resumed = decode(safe(path).read_bytes())
+            if resumed.get("state") == "complete":
+                return "complete", resumed
     return "uncertain", result
 
 
@@ -445,6 +471,99 @@ def new_result(page: dict, provider: str) -> dict:
     }
 
 
+class Pacer:
+    """Minimum gap between consecutive HTTP calls (POST and polling GET alike)."""
+
+    def __init__(
+        self,
+        minimum: float,
+        clock: Callable[[], float],
+        sleep: Callable[[float], None],
+    ) -> None:
+        self.minimum, self.clock, self.sleep = minimum, clock, sleep
+        self.last: float | None = None
+
+    def wait(self) -> None:
+        if self.minimum > 0 and self.last is not None:
+            gap = self.last + self.minimum - self.clock()
+            if gap > 0:
+                self.sleep(gap)
+        self.last = self.clock()
+
+
+def throttle_wait(headers: object, attempt: int) -> float:
+    """Retry-After seconds if valid, else 5/10/20 s backoff; never above 60 s."""
+    value = headers.get("Retry-After") if headers is not None else None
+    try:
+        seconds = float(int(value))
+        if seconds < 0:
+            raise ValueError
+    except TypeError, ValueError:
+        seconds = POLL_BACKOFF[min(attempt, len(POLL_BACKOFF) - 1)]
+    return min(seconds, THROTTLE_MAX)
+
+
+def poll_azure(
+    folder: Path,
+    raw_name: str,
+    settings: dict,
+    op: str,
+    interval: float,
+    transport: Callable,
+    started: float,
+    result: dict,
+    clock: Callable[[], float],
+    sleep: Callable[[float], None],
+    pacer: Pacer,
+) -> None:
+    """Poll one operation (GET only) until a final status or the global deadline.
+
+    429/503 on a GET creates no operation and bills nothing: wait and keep
+    polling. Only exhausting the deadline leaves the page uncertain.
+    """
+    endpoint, key = settings["endpoint"], settings["key"]
+    deadline = clock() + POLL_DEADLINE
+    throttled = 0
+    while True:
+        if clock() + interval > deadline:
+            raise Stop("timeout")
+        sleep(interval)
+        pacer.wait()
+        try:
+            reply = fetch(transport, azure_poll_request(endpoint, key, op), GET_TIMEOUT)
+        except PartialResponse as error:
+            result["http_status"] = error.status
+            raise
+        result["http_status"] = reply.status
+        if reply.status in (429, 503):
+            interval = throttle_wait(reply.headers, throttled)
+            throttled += 1
+            log_phase("poll_throttled", started, status=reply.status)
+            continue
+        throttled = 0
+        log_phase("poll", started, status=reply.status)
+        if reply.status != 200:
+            save_raw(folder / raw_name, reply.raw)
+            raise Stop("http_error")
+        try:
+            body = decode(reply.raw)
+        except ValueError:
+            save_raw(folder / raw_name, reply.raw)
+            raise Stop("invalid_response") from None
+        status = body.get("status")
+        if status in ("notStarted", "running"):
+            interval = retry_after(reply.headers, interval)
+            continue
+        save_raw(folder / raw_name, reply.raw)
+        log_phase("raw_saved", started, status=reply.status)
+        if status != "succeeded":
+            raise Stop("operation_failed" if status == "failed" else "unknown_status")
+        analyzed = check_azure_result(body)
+        result["content_format"] = analyzed.get("contentFormat")
+        result["empty_markdown"] = not analyzed["content"].strip()
+        return
+
+
 def run_azure(
     folder: Path,
     data: bytes,
@@ -454,10 +573,16 @@ def run_azure(
     result: dict,
     clock: Callable[[], float],
     sleep: Callable[[float], None],
+    pacer: Pacer,
 ) -> None:
-    """analyze POST (202 + Operation-Location), then poll GET until a final status."""
+    """analyze POST (202 + Operation-Location), then poll GET until a final status.
+
+    A 429 on the POST stays uncertain: Azure does not document that a throttled
+    POST creates no operation (see README), so it is never replayed.
+    """
     endpoint, key = settings["endpoint"], settings["key"]
     log_phase("http_started", started)
+    pacer.wait()
     try:
         reply = fetch(transport, azure_post_request(endpoint, key, data), POST_TIMEOUT)
     except PartialResponse as error:
@@ -475,38 +600,10 @@ def run_azure(
     record(folder / "operation.json", {"operation_id": op, "retry_after": interval})
     result["state"] = "operation_started_no_replay"
     log_phase("operation_started", started)
-    deadline = clock() + POLL_DEADLINE
-    while True:
-        if clock() + interval > deadline:
-            raise Stop("timeout")
-        sleep(interval)
-        try:
-            reply = fetch(transport, azure_poll_request(endpoint, key, op), GET_TIMEOUT)
-        except PartialResponse as error:
-            result["http_status"] = error.status
-            raise
-        result["http_status"] = reply.status
-        log_phase("poll", started, status=reply.status)
-        if reply.status != 200:
-            save_raw(folder / "response.raw", reply.raw)
-            raise Stop("http_error")
-        try:
-            body = decode(reply.raw)
-        except ValueError:
-            save_raw(folder / "response.raw", reply.raw)
-            raise Stop("invalid_response") from None
-        status = body.get("status")
-        if status in ("notStarted", "running"):
-            interval = retry_after(reply.headers, interval)
-            continue
-        save_raw(folder / "response.raw", reply.raw)
-        log_phase("raw_saved", started, status=reply.status)
-        if status != "succeeded":
-            raise Stop("operation_failed" if status == "failed" else "unknown_status")
-        analyzed = check_azure_result(body)
-        result["content_format"] = analyzed.get("contentFormat")
-        result["empty_markdown"] = not analyzed["content"].strip()
-        return
+    poll_azure(
+        folder, "response.raw", settings, op, interval, transport, started, result,
+        clock, sleep, pacer,
+    )  # fmt: skip
 
 
 def run_mistral(
@@ -540,6 +637,13 @@ def run_mistral(
     result["empty_markdown"] = not page["markdown"].strip()
 
 
+def default_interval(provider: str, azure_tier: str, override: float | None) -> float:
+    """Minimum seconds between HTTP calls: F0 respects 20 calls/min, S0 none."""
+    if override is not None:
+        return max(override, 0.0)
+    return F0_MIN_INTERVAL if provider == "azure" and azure_tier == "f0" else 0.0
+
+
 def send(
     provider: str,
     settings: dict,
@@ -551,18 +655,28 @@ def send(
     azure_tier: str = "f0",
     clock: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], None] = time.sleep,
+    min_interval: float | None = None,
+    loader: Callable | None = None,
+    manifest_sha: str | None = None,
+    total: int | None = None,
 ) -> int:
-    """Process pages in order; skip complete ones; stop at the first non-complete."""
+    """Process pages in order; skip complete ones; stop at the first non-complete.
+
+    ``loader``/``manifest_sha``/``total`` default to the v1 pilot (resolved at
+    call time); alt_ocr_v2 passes its own manifest identity and page count.
+    """
     started = time.monotonic()
+    manifest_sha = manifest_sha or MANIFEST_SHA256
+    total = TOTAL_PAGES if total is None else total
     log_phase("preflight_started", started)
     try:
-        if confirm_pages != TOTAL_PAGES:
+        if confirm_pages != total:
             raise ValueError("Confirmation must equal the page count")
         if provider not in SOURCE_LABEL or "key" not in settings:
             raise ValueError("Invalid provider or credential")
         if provider == "azure":
             validate_endpoint(settings["endpoint"])
-        payloads = preflight(root, repo)
+        payloads = preflight(root, repo, loader)
         if provider == "azure" and azure_tier == "f0":
             if any(len(data) > F0_MAX_FRAGMENT_BYTES for _, data in payloads):
                 raise ValueError("Fragment too large for F0")
@@ -587,6 +701,7 @@ def send(
         return 1
     if transport is None:
         transport = open_transport()
+    pacer = Pacer(default_interval(provider, azure_tier, min_interval), clock, sleep)
     code = 0
     try:
         execution.mkdir(parents=True, exist_ok=True)
@@ -607,7 +722,7 @@ def send(
                     "endpoint": MISTRAL_ENDPOINT
                     if provider == "mistral"
                     else "azure-resource (host not recorded)",
-                    "manifest_sha256": MANIFEST_SHA256,
+                    "manifest_sha256": manifest_sha,
                     "page_id": page["page_id"],
                     "physical_page": page["physical_page"],
                     "source_sha256": page["source_sha256"],
@@ -621,7 +736,15 @@ def send(
             try:
                 if provider == "azure":
                     run_azure(
-                        folder, data, settings, transport, started, result, clock, sleep
+                        folder,
+                        data,
+                        settings,
+                        transport,
+                        started,
+                        result,
+                        clock,
+                        sleep,
+                        pacer,
                     )
                 else:
                     run_mistral(folder, data, settings, transport, started, result)
@@ -669,12 +792,135 @@ def _save_result(folder: Path, result: dict, started: float) -> None:
         log_phase("result_save_failed", started, category=error_category(error))
 
 
+def resume(
+    provider: str,
+    settings: dict,
+    *,
+    page_id: str | None = None,
+    transport: Callable | None = None,
+    root: Path = ROOT,
+    clock: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], None] = time.sleep,
+    azure_tier: str = "f0",
+    min_interval: float | None = None,
+    loader: Callable | None = None,
+) -> int:
+    """Resume ONLY the polling (GET) of uncertain Azure pages; never a new POST.
+
+    Needs ``operation.json`` (written only after a validated 202 +
+    Operation-Location). Each resume reserves ``resume-N.json`` (fsynced before
+    HTTP) and records ``resume-N-result.json`` plus ``resume-N.raw``; the prior
+    uncertain ``result.json`` and ``response.raw`` are never touched. Azure keeps
+    results 24 h after the operation completes (see README).
+    """
+    started = time.monotonic()
+    log_phase("resume_preflight_started", started)
+    try:
+        if provider != "azure" or "key" not in settings:
+            raise ValueError("resume only supports azure with a credential")
+        validate_endpoint(settings["endpoint"])
+        manifest = (loader or load_manifest)(root)
+        execution = safe(root / EXECUTION_NAME) / provider
+        ids = [page["page_id"] for page in manifest["pages"]]
+        if page_id is not None and page_id not in ids:
+            raise ValueError("Unknown page")
+        targets = []
+        for ident in [page_id] if page_id else ids:
+            folder = execution / ident
+            state, _ = page_state(folder)
+            if state != "uncertain":
+                if page_id:
+                    raise ValueError(f"Page is {state}; nothing to resume")
+                continue
+            op_path = folder / "operation.json"
+            if not op_path.exists():
+                raise ValueError(
+                    f"{ident}: no operation.json (no POST 202 with a valid "
+                    "Operation-Location); cannot resume without a new POST"
+                )
+            op = decode(safe(op_path).read_bytes()).get("operation_id")
+            if not isinstance(op, str) or not OPERATION_ID.fullmatch(op):
+                raise ValueError(f"{ident}: invalid operation id in the ledger")
+            targets.append((ident, folder, op))
+        if not targets:
+            raise ValueError("No uncertain pages to resume")
+        log_phase("resume_preflight_validated", started)
+    except (Exception, KeyboardInterrupt) as error:
+        log_phase("resume_refused", started, category=category_of(error))
+        print(f"resume rechazado; ningún HTTP: {error}", file=sys.stderr, flush=True)
+        if isinstance(error, KeyboardInterrupt):
+            raise
+        return 1
+    if transport is None:
+        transport = open_transport()
+    pacer = Pacer(default_interval(provider, azure_tier, min_interval), clock, sleep)
+    code = 0
+    for ident, folder, op in targets:
+        index = max(resume_indexes(folder), default=0) + 1
+        raw_name = f"resume-{index}.raw"
+        record(
+            folder / f"resume-{index}.json",
+            {
+                "created_utc": datetime.now(UTC).isoformat(),
+                "page_id": ident,
+                "operation_id": op,
+                "action": "poll_only_no_new_post",
+                "state": "resume_reserved",
+            },
+        )
+        result = {
+            "page_id": ident,
+            "provider": provider,
+            "resume_index": index,
+            "http_status": None,
+            "category": "unknown",
+            "empty_markdown": None,
+            "state": "uncertain_no_replay",
+        }
+        log_phase("resume_started", started)
+        try:
+            poll_azure(
+                folder, raw_name, settings, op, POLL_DEFAULT, transport, started,
+                result, clock, sleep, pacer,
+            )  # fmt: skip
+            result.update(category="none", state="complete", raw_file=raw_name)
+        except (Exception, KeyboardInterrupt) as error:
+            result["category"] = category_of(error)
+            log_phase(
+                "page_stopped",
+                started,
+                category=result["category"],
+                status=result["http_status"],
+            )
+            if isinstance(error, KeyboardInterrupt):
+                _save_resume(folder, index, result, started)
+                raise
+        _save_resume(folder, index, result, started)
+        if result["state"] != "complete":
+            code = 1
+            break
+    log_phase("finished", started)
+    return code
+
+
+def _save_resume(folder: Path, index: int, result: dict, started: float) -> None:
+    try:
+        record(folder / f"resume-{index}-result.json", result)
+        log_phase("result_saved", started, status=result["http_status"])
+    except Exception as error:  # noqa: BLE001 - guarda: el resumen previo sigue incierto
+        log_phase("result_save_failed", started, category=error_category(error))
+
+
 # ---------------------------------------------------------------------- status
-def status(root: Path = ROOT) -> int:
+def status(
+    root: Path = ROOT,
+    loader: Callable | None = None,
+    providers: tuple[str, ...] = ("azure", "mistral"),
+) -> int:
     """Offline per-page, per-provider state and estimated cost; no key or network."""
-    manifest = load_manifest(root)
+    manifest = (loader or load_manifest)(root)
     execution = root / EXECUTION_NAME
-    for provider in ("azure", "mistral"):
+    for provider in providers:
         attempted = complete = uncertain = 0
         for page in manifest["pages"]:
             state, result = page_state(execution / provider / page["page_id"])
@@ -698,7 +944,7 @@ def status(root: Path = ROOT) -> int:
             cost = f"{attempted * COST_PER_PAGE['mistral']:.3f} USD"
         print(
             f"{provider}: {complete} complete, {uncertain} uncertain, "
-            f"{TOTAL_PAGES - attempted} not started; estimated cost of attempted "
+            f"{len(manifest['pages']) - attempted} not started; estimated cost of attempted "
             f"pages (upper bound): {cost}."
         )
         if uncertain:
@@ -786,10 +1032,15 @@ def export(provider: str, root: Path = ROOT) -> dict:
     execution = root / EXECUTION_NAME / provider
     pages = []
     for page in manifest["pages"]:
-        state, _ = page_state(execution / page["page_id"])
+        state, result = page_state(execution / page["page_id"])
         if state != "complete":
             raise ValueError("All pages must be complete before export")
-        raw = safe(execution / page["page_id"] / "response.raw").read_bytes()
+        raw_file = (result or {}).get("raw_file", "response.raw")
+        if raw_file != "response.raw" and not re.fullmatch(
+            r"resume-[0-9]+\.raw", raw_file
+        ):
+            raise ValueError("Invalid raw file name")
+        raw = safe(execution / page["page_id"] / raw_file).read_bytes()
         markdown, confidence = parse(decode(raw))
         pages.append(
             {
@@ -841,7 +1092,7 @@ def export(provider: str, root: Path = ROOT) -> dict:
 
 # ------------------------------------------------------------------------ main
 def main(argv: list[str] | None = None) -> int:
-    """check/status/export are offline; send requires --confirm-pages 10."""
+    """check/status/export are offline; send needs --confirm-pages 10; resume polls only."""
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("check", help="Offline pinned identities; no key or HTTP")
@@ -863,16 +1114,25 @@ def main(argv: list[str] | None = None) -> int:
         help="Must be exactly 10 (pages authorized)",
     )
     send_parser.add_argument(
-        "--azure-tier",
-        choices=("f0", "s0"),
-        default="f0",
-        help="f0 enforces the 4 MB document limit locally (default)",
-    )
-    send_parser.add_argument(
         "--env-file",
         type=Path,
         help="Explicit dotenv (only the provider variables, no shell expansion)",
     )
+    resume_parser = commands.add_parser(
+        "resume", help="Azure: resume only the polling of uncertain pages (no POST)"
+    )
+    resume_parser.add_argument("--provider", choices=("azure",), required=True)
+    resume_parser.add_argument(
+        "--page", help="page_id to resume (default: every uncertain page)"
+    )
+    resume_parser.add_argument("--env-file", type=Path)
+    for sub in (send_parser, resume_parser):
+        sub.add_argument("--azure-tier", choices=("f0", "s0"), default="f0")
+        sub.add_argument(
+            "--min-interval",
+            type=float,
+            help="Seconds between HTTP calls (default: 3.5 with f0, 0 with s0)",
+        )
     args = parser.parse_args(argv)
     if args.command == "send" and args.confirm_pages != TOTAL_PAGES:
         parser.error(f"--confirm-pages must be exactly {TOTAL_PAGES}")
@@ -891,11 +1151,20 @@ def main(argv: list[str] | None = None) -> int:
         log_phase("credential_load_started", started)
         settings = load_settings(args.provider, args.env_file)
         log_phase("credential_loaded", started)
+        if args.command == "resume":
+            return resume(
+                args.provider,
+                settings,
+                page_id=args.page,
+                azure_tier=args.azure_tier,
+                min_interval=args.min_interval,
+            )
         return send(
             args.provider,
             settings,
             confirm_pages=args.confirm_pages,
             azure_tier=args.azure_tier,
+            min_interval=args.min_interval,
         )
     except KeyboardInterrupt:
         log_phase("interrupted", started, category="interrupted")

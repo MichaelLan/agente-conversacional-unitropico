@@ -1,0 +1,3338 @@
+{
+ "schema": "alt-ocr-pilot-v1-comparison/v1",
+ "date": "2026-11-20",
+ "scope": "10 páginas físicas del piloto: Res. CBU 002-2025 p3, p12, p13, p14; Documento Técnico p16, p18, p20, p22, p54; Manual M-IP-36 p38.",
+ "inputs": {
+  "azure": "evaluations/ocr/.artifacts/alt-ocr-pilot-v1/export/azure/pages.json (prebuilt-layout, markdown + confianza por palabra)",
+  "firecrawl": "evaluations/ocr/.artifacts/selective-ocr-v1/execution/<lote>/response.raw data.pages[].markdown, mapeado con manifest.json lots[].mapping (lotes 01, 02, 03)",
+  "originals": "documents/documentos_bienestar/*.pdf (solo lectura)"
+ },
+ "method": {
+  "blinding": "Script prepare_blind.py (python -I, PyMuPDF vía uvx) extrae ambos markdown por página y los guarda como A/B con random.Random(20261120).shuffle; clave en key.json (sha256 004c7f5217aca13afef7537e2677d7f92f7c95e4ae511331186f008c2022e24f), abierta solo tras completar las 10 evaluaciones. Normalización neutra: comentarios <!-- PageHeader/Footer/Number=\"…\" --> sustituidos por su texto y <figure>/<figcaption> eliminados (marcas que delataban al proveedor).",
+  "evaluation": "4 subagentes evaluadores recibieron solo A/B, render 150 dpi y tercios a 300 dpi (con libertad de renderizar 400–600 dpi del PDF original); sin acceso a la clave ni a la auditoría previa. Lista cerrada de datos críticos fijada desde la imagen antes de leer A/B.",
+  "rubric": {
+   "ok": "fiel; solo formato",
+   "minor": "solo diferencias cosméticas (formato, coma/punto decimal sin cambio de valor, pie/encabezado omitido)",
+   "defect": "al menos un error sustantivo; toda autocorrección de errata cuenta como defect",
+   "missing": "sin texto"
+  },
+  "coordinator_checks": "Verificación independiente del BPIN de p54 (ver findings), y cotejo puntual de p03 (eduo.co), p06 (cabecera inglesa), p08 (porcentajes) contra los markdown tras desvelar."
+ },
+ "totals": {
+  "azure": {
+   "classification": {
+    "defect": 6,
+    "minor": 3,
+    "ok": 1
+   },
+   "n_substantive": 54,
+   "n_cosmetic": 27,
+   "hallucinations": 4,
+   "omissions": 0,
+   "autocorrections": 0,
+   "facts_ok": 129,
+   "facts_total": 141
+  },
+  "firecrawl": {
+   "classification": {
+    "defect": 9,
+    "minor": 1
+   },
+   "n_substantive": 59,
+   "n_cosmetic": 28,
+   "hallucinations": 10,
+   "omissions": 12,
+   "autocorrections": 2,
+   "facts_ok": 103,
+   "facts_total": 141
+  }
+ },
+ "confidence_azure": {
+  "matching": "Cada token erróneo (wrong_tokens de correcciones sustantivas de lectura) se casa con la primera palabra no usada de words[] con igual texto normalizado; se excluyen omisiones y errores de estructura (no son errores de palabra).",
+  "all_pages_including_structure": {
+   "0.5": {
+    "low_words": 58,
+    "low_share": 0.016,
+    "errors_below": 14,
+    "errors_at_or_above": 89,
+    "sensitivity": 0.136,
+    "precision": 0.241
+   },
+   "0.7": {
+    "low_words": 221,
+    "low_share": 0.062,
+    "errors_below": 42,
+    "errors_at_or_above": 61,
+    "sensitivity": 0.408,
+    "precision": 0.19
+   },
+   "0.8": {
+    "low_words": 272,
+    "low_share": 0.077,
+    "errors_below": 50,
+    "errors_at_or_above": 53,
+    "sensitivity": 0.485,
+    "precision": 0.184
+   },
+   "0.9": {
+    "low_words": 378,
+    "low_share": 0.107,
+    "errors_below": 64,
+    "errors_at_or_above": 39,
+    "sensitivity": 0.621,
+    "precision": 0.169
+   },
+   "0.95": {
+    "low_words": 493,
+    "low_share": 0.139,
+    "errors_below": 71,
+    "errors_at_or_above": 32,
+    "sensitivity": 0.689,
+    "precision": 0.144
+   }
+  },
+  "excluding_structure": {
+   "all": {
+    "n_words": 3545,
+    "n_err": 98,
+    "ambiguous": 15,
+    "0.5": {
+     "low": 58,
+     "tp": 14,
+     "sens": 0.143,
+     "prec": 0.241
+    },
+    "0.8": {
+     "low": 272,
+     "tp": 50,
+     "sens": 0.51,
+     "prec": 0.184
+    },
+    "0.9": {
+     "low": 378,
+     "tp": 64,
+     "sens": 0.653,
+     "prec": 0.169
+    }
+   },
+   "p01": {
+    "n_words": 516,
+    "n_err": 88,
+    "ambiguous": 15,
+    "0.5": {
+     "low": 39,
+     "tp": 11,
+     "sens": 0.125,
+     "prec": 0.282
+    },
+    "0.8": {
+     "low": 167,
+     "tp": 42,
+     "sens": 0.477,
+     "prec": 0.251
+    },
+    "0.9": {
+     "low": 214,
+     "tp": 54,
+     "sens": 0.614,
+     "prec": 0.252
+    }
+   },
+   "rest": {
+    "n_words": 3029,
+    "n_err": 10,
+    "ambiguous": 0,
+    "0.5": {
+     "low": 19,
+     "tp": 3,
+     "sens": 0.3,
+     "prec": 0.158
+    },
+    "0.8": {
+     "low": 105,
+     "tp": 8,
+     "sens": 0.8,
+     "prec": 0.076
+    },
+    "0.9": {
+     "low": 164,
+     "tp": 10,
+     "sens": 1.0,
+     "prec": 0.061
+    }
+   }
+  },
+  "mean_confidence_per_page": {
+   "p3": 0.831,
+   "p12": 0.981,
+   "p13": 0.953,
+   "p14": 0.97,
+   "p16": 0.986,
+   "p18": 0.978,
+   "p20": 0.987,
+   "p22": 0.983,
+   "p54": 0.946,
+   "p38": 0.985
+  },
+  "caveat": "88 de 98 errores de palabra están en Res. CBU p3 (escaneo desvaído); 15 de sus emparejamientos son ambiguos (palabra repetida). En las otras 9 páginas solo hay 10 errores: muestra mínima."
+ },
+ "findings": [
+  "BPIN de p54: la imagen dice 202300000000204 (15 dígitos: 2023 + 8 ceros + 204), verificado por perfil de píxeles sobre la imagen incrustada (1227x758). Azure lo transcribe exacto; Firecrawl 20230000000204 (14). La corrección propuesta en selective-ocr-v1-audit.json ('BPIN 2023000000000204', 16 dígitos) y el ejemplo de docs/research/ocr-alternatives.md §7 son ERRÓNEOS: añaden un cero de más.",
+  "Res. CBU p13: Azure conserva la errata 'www.unitropico.eduo.co'; Firecrawl la autocorrige a 'www.unitrópico.edu.co'.",
+  "Alucinaciones Azure (4): ruido de escaneo leído como texto ('kopi', '| MI', ': 3ª' en p13; '8' por 's' cortada en p16), todas salvo ': 3ª' con confianza < 0,7 (kopi 0,074; MI 0,202; 8 0,651). Ninguna inventa contenido semántico ni traduce.",
+  "Alucinaciones Firecrawl (10): texto inventado y en inglés en el árbol de problemas (p16), cabecera inglesa 'Category | Share (%)' y desplazamiento de los 5 porcentajes del anillo (p18), valor 2010 '17.9' inexistente (p20).",
+  "Tabla p12–p14 (cronograma): Firecrawl conserva mejor la estructura en p13 (Azure parte la fila 'Publicación de Listado Preliminar' y separa la fecha en dos columnas) pero omite la fecha inicial de Inscripción en p12 ('28 de octubre de 2025'). Ninguno inventa cabeceras de continuación.",
+  "Azure lee el símbolo % como dígitos en la Tabla 1 de p22 (11,39% / 11,796 / 11,89% por 11,3% / 11,7% / 11,8%): 3 cifras críticas erróneas; Firecrawl exacto.",
+  "Escaneo desvaído (p3): Azure transcribe casi glifo a glifo (41 correcciones, palabras visiblemente rotas); Firecrawl 14 correcciones pero con sustituciones plausibles ('Unitrófico' x3, 'estudiante' por 'estudiantil') más difíciles de detectar."
+ ],
+ "blind_reviewer_counts_vs_previous_audit_firecrawl": {
+  "p3": [
+   14,
+   17
+  ],
+  "p12": [
+   4,
+   4
+  ],
+  "p13": [
+   3,
+   3
+  ],
+  "p14": [
+   4,
+   4
+  ],
+  "p16": [
+   15,
+   "manual"
+  ],
+  "p18": [
+   6,
+   2
+  ],
+  "p20": [
+   2,
+   1
+  ],
+  "p22": [
+   0,
+   1
+  ],
+  "p54": [
+   10,
+   10
+  ],
+  "p38": [
+   1,
+   0
+  ]
+ },
+ "pages": [
+  {
+   "tag": "p01",
+   "page_id": "01-res-cbu-002-2025-p03",
+   "physical_page": 3,
+   "blind_assignment": {
+    "A": "azure",
+    "B": "firecrawl"
+   },
+   "azure": {
+    "classification": "defect",
+    "n_substantive": 41,
+    "n_cosmetic": 6,
+    "hallucinations": [],
+    "omissions": [],
+    "autocorrections": [],
+    "table_fidelity": "n/a",
+    "corrections": [
+     {
+      "type": "substantive",
+      "image": "forma de distribución",
+      "version": "forra de distribución",
+      "wrong_tokens": [
+       "forra"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "subsidios se determinarán",
+      "version": "subs'd os se determinaran",
+      "wrong_tokens": [
+       "subs'd os",
+       "determinaran"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "la disponibilidad presupuestal",
+      "version": "la disporibil cad presupuestal",
+      "wrong_tokens": [
+       "disporibil cad"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "mediante convocatoria pública realizada",
+      "version": "mediante corvocatoria pública real zada",
+      "wrong_tokens": [
+       "corvocatoria",
+       "real zada"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "Bienestar Universitario.",
+      "version": "Bienestar Universita .o.",
+      "wrong_tokens": [
+       "Universita .o."
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "regulado por la Resolución Rectoral",
+      "version": "regulado por a Rescución Rectoral",
+      "wrong_tokens": [
+       "Rescución"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "las convocatorias públicas relacionadas",
+      "version": "las convocatorias publicas relacionadas",
+      "wrong_tokens": [
+       "publicas"
+      ],
+      "kind": "accent"
+     },
+     {
+      "type": "substantive",
+      "image": "la adjudicación de los apoyos",
+      "version": "la acjudicacior ce Ics apoyos",
+      "wrong_tokens": [
+       "acjudicacior",
+       "ce",
+       "Ics"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "en el Acuerdo CS No 069",
+      "version": "en el Acuerdc CS No 069",
+      "wrong_tokens": [
+       "Acuerdc"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "Que mediante Resolución SG",
+      "version": "Que mediarte Resolución SG",
+      "wrong_tokens": [
+       "mediarte"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "se reglamentan los actos",
+      "version": "se reg'amenta ch Ics actos",
+      "wrong_tokens": [
+       "reg'amenta ch",
+       "Ics"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "emitir el Comité",
+      "version": "emit r el Comité",
+      "wrong_tokens": [
+       "emit r"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "entendiéndose como aquellos documentos",
+      "version": "entendiercose como acuellos documentos",
+      "wrong_tokens": [
+       "entendiercose",
+       "acuellos"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "general o particular",
+      "version": "genera 5 part cular",
+      "wrong_tokens": [
+       "genera 5",
+       "part cular"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "se crean, modifican o extinguen",
+      "version": "se crean, modifica: o extinguen",
+      "wrong_tokens": [
+       "modifica:"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "desarrollo de sus funciones",
+      "version": "desarro lo de sus funciones",
+      "wrong_tokens": [
+       "desarro lo"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "Apoyo Socioeconómico de Alimentación contribuye",
+      "version": "Apoyo Soc beconómico de Alimentación contribuye",
+      "wrong_tokens": [
+       "Soc beconómico"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "en condición de vulnerabilidad socioeconómica",
+      "version": "en condicion de vu nerabil dad socioeconómica",
+      "wrong_tokens": [
+       "condicion",
+       "vu nerabil dad"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "encuentra alineado con los objetivos",
+      "version": "encuentra alineaco con los ob etivos",
+      "wrong_tokens": [
+       "alineaco",
+       "ob etivos"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "Plan de Desarrollo Institucional 2024–2028, en el eje",
+      "version": "Plan de Desarro lo Institucional 2024-2028, er el eje",
+      "wrong_tokens": [
+       "Desarro lo",
+       "er"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "en atención al calendario académico institucional",
+      "version": "en aterción al ca endario academ co institucional",
+      "wrong_tokens": [
+       "aterción",
+       "ca endario",
+       "academ co"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "la segunda convocatoria del año 2025",
+      "version": "la segunda convocatona del año 2025",
+      "wrong_tokens": [
+       "convocatona"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "al periodo académico 2025-2",
+      "version": "al pericco academ co 2025-2",
+      "wrong_tokens": [
+       "pericco",
+       "academ co"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "del Apoyo Socioeconómico de Alimentación",
+      "version": "del Apoyo Scc ceconómico de Alimentaciór",
+      "wrong_tokens": [
+       "Scc ceconómico",
+       "Alimentaciór"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "\"Ecosistema para el conocimiento\"",
+      "version": "\"Ecosistema para el conccimiento\"",
+      "wrong_tokens": [
+       "conccimiento"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "etapas de inducción, permanencia y graduación",
+      "version": "etapas de induccior ce manencia y graciació-",
+      "wrong_tokens": [
+       "induccior",
+       "ce manencia",
+       "graciació-"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "incluyendo apoyo en los aspectos",
+      "version": "incluyerdo apoyo en 'os aspectos",
+      "wrong_tokens": [
+       "incluyerdo",
+       "'os"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "el Apoyo Socioeconómico de Alimentación del Programa",
+      "version": "el Apoyo Socicecoromeo de Alimentación del Programa",
+      "wrong_tokens": [
+       "Socicecoromeo"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "la realización personal",
+      "version": "la realizacior personal",
+      "wrong_tokens": [
+       "realizacior"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "de los estudiantes de Unitrópico",
+      "version": "de los estuciantes de U-itrópico",
+      "wrong_tokens": [
+       "estuciantes",
+       "U-itrópico"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "el Comité de Bienestar Universitario",
+      "version": "el Comité ce Eienestar Universitario",
+      "wrong_tokens": [
+       "ce",
+       "Eienestar"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "Universidad Internacional del Trópico Americano",
+      "version": "Universidad Irterrac onal del Tropico Americano",
+      "wrong_tokens": [
+       "Irterrac onal",
+       "Tropico"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "en mérito de lo expuesto",
+      "version": "en mérito ce lo expuesto",
+      "wrong_tokens": [
+       "ce"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "El presente acto tiene",
+      "version": "El presente acte tiene",
+      "wrong_tokens": [
+       "acte"
+      ],
+      "kind": "misread",
+      "uncertain": true
+     },
+     {
+      "type": "substantive",
+      "image": "la convocatoria pública 2025-",
+      "version": "la convocatoria pub ica 2025-",
+      "wrong_tokens": [
+       "pub ica"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "de conformidad con las disposiciones",
+      "version": "de corform dad cor las discosis cnes",
+      "wrong_tokens": [
+       "corform dad",
+       "cor",
+       "discosis cnes"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "reglamentación aquí contenida",
+      "version": "reglamentación aqui contenida",
+      "wrong_tokens": [
+       "aqui"
+      ],
+      "kind": "accent"
+     },
+     {
+      "type": "substantive",
+      "image": "inicia el dia",
+      "version": "inic.a el dia",
+      "wrong_tokens": [
+       "inic.a"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "PARÁGRAFO 2.",
+      "version": "PARAGRAFO 2.",
+      "wrong_tokens": [
+       "PARAGRAFO"
+      ],
+      "kind": "accent"
+     },
+     {
+      "type": "substantive",
+      "image": "Los apoyos socioeconómicos adjudicados",
+      "version": "Los apoyos scciceconómicos ad udicados",
+      "wrong_tokens": [
+       "scciceconómicos",
+       "ad udicados"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "se harán efectivos",
+      "version": "se naran efectivos",
+      "wrong_tokens": [
+       "naran"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "cosmetic",
+      "image": "Universidad Internacional del Trópico Americano (logotipo)",
+      "version": "Ln versicad internacional del Tropics Americaro",
+      "wrong_tokens": [
+       "Ln versicad",
+       "Tropics Americaro"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "cosmetic",
+      "image": "Universidad Internacional del Trópico Americano / NIT",
+      "version": "Universidad Internaciona' del Tropico Americano / NIT",
+      "wrong_tokens": [
+       "Internaciona'",
+       "Tropico"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "cosmetic",
+      "image": "Cra 15 N. 39 - 40 Ciudadela Universitaria",
+      "version": "Cra IS N. 39 - 40 Ciudadela Urivers taria",
+      "wrong_tokens": [
+       "IS",
+       "Urivers taria"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "cosmetic",
+      "image": "vur@unitropico.edu.co",
+      "version": "vun@un'trop co.edu.co",
+      "wrong_tokens": [
+       "vun@un'trop co.edu.co"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "cosmetic",
+      "image": "(iconos del pie)",
+      "version": "... 844002071-4 0 ... 915 70 05 5",
+      "wrong_tokens": [
+       "0",
+       "5"
+      ],
+      "kind": "other"
+     },
+     {
+      "type": "cosmetic",
+      "image": "RESUELVE: (texto centrado en negrita)",
+      "version": "# RESUELVE:",
+      "wrong_tokens": [
+       "#"
+      ],
+      "kind": "structure"
+     }
+    ],
+    "facts_ok": 17,
+    "facts_total": 20,
+    "notes": "Transcribe casi glifo a glifo el escaneo desvaído: ~40 palabras rotas o mal leídas (huecos, …",
+    "n_hallucinations": 0
+   },
+   "firecrawl": {
+    "classification": "defect",
+    "n_substantive": 14,
+    "n_cosmetic": 7,
+    "hallucinations": [],
+    "omissions": [
+     "subtítulo del logotipo y pie institucional completo (NIT, dirección, teléfono, correo, web): cosmético según el …"
+    ],
+    "autocorrections": [],
+    "table_fidelity": "n/a",
+    "corrections": [
+     {
+      "type": "substantive",
+      "image": "entendiéndose como aquellos documentos",
+      "version": "entendírcose como acuellos documentos",
+      "wrong_tokens": [
+       "entendírcose",
+       "acuellos"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "general o particular",
+      "version": "genera o particular",
+      "wrong_tokens": [
+       "genera"
+      ],
+      "kind": "misread",
+      "uncertain": true
+     },
+     {
+      "type": "substantive",
+      "image": "encuentra alineado con los objetivos",
+      "version": "encuentra alineaco con los objetivos",
+      "wrong_tokens": [
+       "alineaco"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "Institucional 2024–2028, en el eje",
+      "version": "Institucional 2024–2028, er el eje",
+      "wrong_tokens": [
+       "er"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "el bienestar estudiantil, se hace",
+      "version": "el bienestar estudiante, se hace",
+      "wrong_tokens": [
+       "estudiante"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "al periodo académico 2025-2",
+      "version": "al perico académico 2025-2",
+      "wrong_tokens": [
+       "perico"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "\"Ecosistema para el conocimiento\"",
+      "version": "\"Ecosistema para el concimiento\"",
+      "wrong_tokens": [
+       "concimiento"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "de los estudiantes de Unitrópico.",
+      "version": "de los estudiantes de Unitrófico.",
+      "wrong_tokens": [
+       "Unitrófico"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "del Trópico Americano, Unitrópico, en mérito",
+      "version": "del Trópico Americano, Unitrófico, en mérito",
+      "wrong_tokens": [
+       "Unitrófico"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "El presente acto tiene",
+      "version": "El presente acte tiene",
+      "wrong_tokens": [
+       "acte"
+      ],
+      "kind": "misread",
+      "uncertain": true
+     },
+     {
+      "type": "substantive",
+      "image": "Alimentación descrito en el Programa",
+      "version": "Alimentación descrrito en el Programa",
+      "wrong_tokens": [
+       "descrrito"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "Americano Unitrópico de conformidad",
+      "version": "Americano Unitrófico de conformidad",
+      "wrong_tokens": [
+       "Unitrófico"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "con las disposiciones del Acuerdo",
+      "version": "con las discosiciones del Acuerdo",
+      "wrong_tokens": [
+       "discosiciones"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "se harán efectivos",
+      "version": "se naran efectivos",
+      "wrong_tokens": [
+       "naran"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "cosmetic",
+      "image": "Bienestar y Permanencia Estudiantil",
+      "version": "Bienestary Permanencia Estudiantil",
+      "wrong_tokens": [
+       "Bienestary"
+      ],
+      "kind": "other"
+     },
+     {
+      "type": "cosmetic",
+      "image": "Que, el Comité de Bienestar",
+      "version": "Que el Comité de Bienestar",
+      "wrong_tokens": [
+       "Que"
+      ],
+      "kind": "other"
+     },
+     {
+      "type": "cosmetic",
+      "image": "socioeconómica. y se encuentra",
+      "version": "socioeconómica, y se encuentra",
+      "wrong_tokens": [
+       "socioeconómica,"
+      ],
+      "kind": "other",
+      "uncertain": true
+     },
+     {
+      "type": "cosmetic",
+      "image": "\"Bien-Estar Contigo\" (comillas dobles de cierre)",
+      "version": "'Bien-Estar Contigo'",
+      "wrong_tokens": [
+       "Contigo'"
+      ],
+      "kind": "other"
+     },
+     {
+      "type": "cosmetic",
+      "image": "Unitrópico / Universidad Internacional del Trópico Americano (logotipo)",
+      "version": "# Unitrópico",
+      "wrong_tokens": [
+       "(subtítulo del logo omitido)"
+      ],
+      "kind": "omission"
+     },
+     {
+      "type": "cosmetic",
+      "image": "Universidad Internacional ... NIT. 844002071-4 ... www.unitropico.edu.co",
+      "version": "(pie de página omitido)",
+      "wrong_tokens": [],
+      "kind": "omission"
+     },
+     {
+      "type": "cosmetic",
+      "image": "RESUELVE: (texto centrado en negrita)",
+      "version": "## RESUELVE:",
+      "wrong_tokens": [
+       "##"
+      ],
+      "kind": "structure"
+     }
+    ],
+    "facts_ok": 15,
+    "facts_total": 20,
+    "notes": "Reconstruye bien la mayor parte del texto desvaído y todas las cifras críticas del cuerpo, …",
+    "n_hallucinations": 0
+   },
+   "critical_facts": [
+    {
+     "fact": "parágrafo/artículo citados",
+     "image": "parágrafo 3 del artículo 6",
+     "azure": "parágrafo 3 del artículo 6",
+     "azure_ok": true,
+     "firecrawl": "parágrafo 3 del artículo 6",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Acuerdo CS (párrafo 1)",
+     "image": "Acuerdo CS No 069 de 2024",
+     "azure": "Acuerdo CS No 069 de 2024",
+     "azure_ok": true,
+     "firecrawl": "Acuerdo CS No. 069 de 2024",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Resolución Rectoral",
+     "image": "No. 020 de 2021",
+     "azure": "No. 020 de 2021",
+     "azure_ok": true,
+     "firecrawl": "No. 020 de 2021",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Acuerdo CS (párrafo 2)",
+     "image": "Acuerdo CS No 069 de 2024 (glifos desvaídos: 'Acuerdc', '069' parcial)",
+     "azure": "Acuerdc CS No 069 de 2024",
+     "azure_ok": false,
+     "firecrawl": "Acuerdo CS No. 069 de 2024",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Resolución SG",
+     "image": "SG No. 004 de 2024 (primer 0 desvaído, parece 8)",
+     "azure": "SG No. 004 de 2024",
+     "azure_ok": true,
+     "firecrawl": "SG No. 004 de 2024",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "PDI (párrafo 4)",
+     "image": "2024–2028",
+     "azure": "2024-2028",
+     "azure_ok": true,
+     "firecrawl": "2024–2028",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "convocatoria del año",
+     "image": "segunda convocatoria del año 2025",
+     "azure": "segunda convocatona del año 2025",
+     "azure_ok": true,
+     "firecrawl": "segunda convocatoria del año 2025",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "periodo académico",
+     "image": "2025-2",
+     "azure": "2025-2",
+     "azure_ok": true,
+     "firecrawl": "2025-2",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "PDI (párrafo 6)",
+     "image": "2024–2028",
+     "azure": "2024-2028",
+     "azure_ok": true,
+     "firecrawl": "2024–2028",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Eje Estratégico",
+     "image": "Eje Estratégico 3",
+     "azure": "Eje Estratégico 3",
+     "azure_ok": true,
+     "firecrawl": "Eje Estratégico 3",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "meta",
+     "image": "E3M38",
+     "azure": "E3M38",
+     "azure_ok": true,
+     "firecrawl": "E3M38",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "convocatoria Art. 1",
+     "image": "convocatoria pública 2025-2",
+     "azure": "convocatoria pub ica 2025-2",
+     "azure_ok": true,
+     "firecrawl": "convocatoria pública 2025-2",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Acuerdo CS (Art. 1)",
+     "image": "Acuerdo CS No. 069 de 2024",
+     "azure": "Acuerdo CS No. 069 de 2024",
+     "azure_ok": true,
+     "firecrawl": "Acuerdo CS No. 069 de 2024",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "fecha de inicio",
+     "image": "27 de octubre de 2025",
+     "azure": "27 de octubre de 2025",
+     "azure_ok": true,
+     "firecrawl": "27 de octubre de 2025",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "vigencia académica",
+     "image": "2026-A",
+     "azure": "2026-A",
+     "azure_ok": true,
+     "firecrawl": "2026-A",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "NIT",
+     "image": "844002071-4",
+     "azure": "844002071-4",
+     "azure_ok": true,
+     "firecrawl": "(omitido, pie)",
+     "firecrawl_ok": false
+    },
+    {
+     "fact": "teléfono",
+     "image": "(601) 915 70 05",
+     "azure": "(601) 915 70 05",
+     "azure_ok": true,
+     "firecrawl": "(omitido, pie)",
+     "firecrawl_ok": false
+    },
+    {
+     "fact": "dirección",
+     "image": "Cra 15 N. 39 - 40",
+     "azure": "Cra IS N. 39 - 40",
+     "azure_ok": false,
+     "firecrawl": "(omitido, pie)",
+     "firecrawl_ok": false
+    },
+    {
+     "fact": "web",
+     "image": "www.unitropico.edu.co",
+     "azure": "www.unitropico.edu.co",
+     "azure_ok": true,
+     "firecrawl": "(omitido, pie)",
+     "firecrawl_ok": false
+    },
+    {
+     "fact": "correo",
+     "image": "vur@unitropico.edu.co (desvaído)",
+     "azure": "vun@un'trop co.edu.co",
+     "azure_ok": false,
+     "firecrawl": "(omitido, pie)",
+     "firecrawl_ok": false
+    }
+   ],
+   "comparative_note_blind": "Ninguna versión alucina contenido y ambas aciertan todas las cifras críticas del cuerpo. B es …"
+  },
+  {
+   "tag": "p02",
+   "page_id": "01-res-cbu-002-2025-p12",
+   "physical_page": 12,
+   "blind_assignment": {
+    "A": "azure",
+    "B": "firecrawl"
+   },
+   "azure": {
+    "classification": "defect",
+    "n_substantive": 2,
+    "n_cosmetic": 1,
+    "hallucinations": [],
+    "omissions": [],
+    "autocorrections": [],
+    "table_fidelity": "Cabecera y 4 filas correctas; fechas en su fila. Celda de descripción de Inscripción partida …",
+    "corrections": [
+     {
+      "type": "substantive",
+      "image": "con el cronograma aquí dispuesto.",
+      "version": "con el cronograma aqui dispuesto.",
+      "wrong_tokens": [
+       "aqui"
+      ],
+      "kind": "accent"
+     },
+     {
+      "type": "substantive",
+      "image": "web de Unitrópico www.unitropico.edu.co",
+      "version": "web de Unitropic www.unitropico.edu.co",
+      "wrong_tokens": [
+       "Unitropic"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "cosmetic",
+      "image": "celda única Descripción de Inscripción (Enlace, Nota 1, Nota 2)",
+      "version": "dividida en dos <tr> con rowspan=2 en las demás columnas",
+      "wrong_tokens": [],
+      "kind": "structure"
+     }
+    ],
+    "facts_ok": 10,
+    "facts_total": 11,
+    "notes": "Incluye logo y pie de página. 'Enlace:' sin URL fiel al original.",
+    "n_hallucinations": 0
+   },
+   "firecrawl": {
+    "classification": "defect",
+    "n_substantive": 4,
+    "n_cosmetic": 1,
+    "hallucinations": [],
+    "omissions": [
+     "Fecha Inicial de Inscripción '28 de octubre de 2025' (dato crítico)"
+    ],
+    "autocorrections": [],
+    "table_fidelity": "Tabla markdown 4 columnas, filas bien emparejadas salvo la celda Fecha Inicial de Inscripción vacía …",
+    "corrections": [
+     {
+      "type": "substantive",
+      "image": "web de Unitrópico www.unitropico.edu.co",
+      "version": "web de Unitrófico www.unitropico.edu.co",
+      "wrong_tokens": [
+       "Unitrófico"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "Contigo\" de Unitrópico, Convocatoria 2025-2\"",
+      "version": "Contigo\" de Unitrófico, Convocatoria 2025-2\"",
+      "wrong_tokens": [
+       "Unitrófico"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "Fecha Inicial Inscripción: 28 de octubre de 2025",
+      "version": "(celda vacía)",
+      "wrong_tokens": [],
+      "kind": "omission"
+     },
+     {
+      "type": "substantive",
+      "image": "únicamente los",
+      "version": "unicamente los",
+      "wrong_tokens": [
+       "unicamente"
+      ],
+      "kind": "accent"
+     },
+     {
+      "type": "cosmetic",
+      "image": "encabezado logo y pie de página institucional",
+      "version": "(omitidos)",
+      "wrong_tokens": [],
+      "kind": "omission"
+     }
+    ],
+    "facts_ok": 8,
+    "facts_total": 11,
+    "notes": "Párrafos reflujados (cosmético).",
+    "n_hallucinations": 0
+   },
+   "critical_facts": [
+    {
+     "fact": "Artículo número",
+     "image": "ARTÍCULO 14",
+     "azure": "ARTÍCULO 14",
+     "azure_ok": true,
+     "firecrawl": "ARTÍCULO 14",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Numeral entrega apoyos",
+     "image": "10.",
+     "azure": "10.",
+     "azure_ok": true,
+     "firecrawl": "10.",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "URL Divulgación",
+     "image": "www.unitropico.edu.co",
+     "azure": "www.unitropico.edu.co",
+     "azure_ok": true,
+     "firecrawl": "www.unitropico.edu.co",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Divulgación Fecha Inicial",
+     "image": "28 de octubre de 2025",
+     "azure": "28 de octubre de 2025",
+     "azure_ok": true,
+     "firecrawl": "28 de octubre de 2025",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Divulgación Fecha Final",
+     "image": "10 de noviembre de 2025",
+     "azure": "10 de noviembre de 2025",
+     "azure_ok": true,
+     "firecrawl": "10 de noviembre de 2025",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Inscripción Fecha Inicial",
+     "image": "28 de octubre de 2025",
+     "azure": "28 de octubre de 2025",
+     "azure_ok": true,
+     "firecrawl": "(vacía)",
+     "firecrawl_ok": false
+    },
+    {
+     "fact": "Inscripción Fecha Final",
+     "image": "10 de noviembre de 2025 6:00 pm",
+     "azure": "10 de noviembre de 2025 6:00 pm",
+     "azure_ok": true,
+     "firecrawl": "10 de noviembre de 2025 6:00 pm",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Convocatoria",
+     "image": "Convocatoria 2025-2",
+     "azure": "Convocatoria 2025-2",
+     "azure_ok": true,
+     "firecrawl": "Convocatoria 2025-2",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Verificación de Requisitos: fechas",
+     "image": "(vacías; la fila continúa en p.13)",
+     "azure": "(vacías; la fila continúa en p.13)",
+     "azure_ok": true,
+     "firecrawl": "(vacías; la fila continúa en p.13)",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Nombre institución en Divulgación",
+     "image": "Unitrópico",
+     "azure": "Unitropic",
+     "azure_ok": false,
+     "firecrawl": "Unitrófico",
+     "firecrawl_ok": false
+    },
+    {
+     "fact": "Nombre institución en Inscripción",
+     "image": "Unitrópico",
+     "azure": "Unitrópico",
+     "azure_ok": true,
+     "firecrawl": "Unitrófico",
+     "firecrawl_ok": false
+    }
+   ],
+   "comparative_note_blind": "A es más fiel: todas las fechas correctas, solo un nombre mal leído ('Unitropic') y …"
+  },
+  {
+   "tag": "p03",
+   "page_id": "01-res-cbu-002-2025-p13",
+   "physical_page": 13,
+   "blind_assignment": {
+    "A": "azure",
+    "B": "firecrawl"
+   },
+   "azure": {
+    "classification": "defect",
+    "n_substantive": 4,
+    "n_cosmetic": 2,
+    "hallucinations": [
+     "'kopi' antes de fecha Reclamaciones",
+     "'| MI' tras 6:00 p.m.",
+     "': 3ª' en encabezado (ruido de escaneo)"
+    ],
+    "omissions": [],
+    "autocorrections": [],
+    "table_fidelity": "Fila de continuación (Verificación) sin cabecera repetida, correcta. Fila Publicación partida en dos <tr>: la …",
+    "corrections": [
+     {
+      "type": "substantive",
+      "image": "24 de noviembre de 2025 (celda combinada, fila Publicación)",
+      "version": "<td>24 de noviembre</td><td>de 2025</td> en fila nueva",
+      "wrong_tokens": [
+       "24 de noviembre",
+       "de 2025"
+      ],
+      "kind": "structure"
+     },
+     {
+      "type": "substantive",
+      "image": "fila Publicación: título y párrafo 'El Comité... dará a conocer' en una celda",
+      "version": "partida en dos filas; párrafo en fila propia",
+      "wrong_tokens": [],
+      "kind": "structure"
+     },
+     {
+      "type": "substantive",
+      "image": "24 de noviembre de 2025",
+      "version": "kopi 24 de noviembre de 2025",
+      "wrong_tokens": [
+       "kopi"
+      ],
+      "kind": "hallucination"
+     },
+     {
+      "type": "substantive",
+      "image": "27 de noviembre de 2025 6:00 p.m.",
+      "version": "27 de noviembre de 2025 6:00 p.m. | MI",
+      "wrong_tokens": [
+       "| MI"
+      ],
+      "kind": "hallucination"
+     },
+     {
+      "type": "cosmetic",
+      "image": "El Comité de Bienestar",
+      "version": "EI Comité de Bienestar",
+      "wrong_tokens": [
+       "EI"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "cosmetic",
+      "image": "(logo, sin texto)",
+      "version": ": 3ª",
+      "wrong_tokens": [
+       ":",
+       "3ª"
+      ],
+      "kind": "hallucination"
+     }
+    ],
+    "facts_ok": 7,
+    "facts_total": 10,
+    "notes": "URL con errata 'eduo' transcrita literalmente (correcto). 'EI' con I mayúscula marcada cosmética (visualmente idéntica).",
+    "n_hallucinations": 3
+   },
+   "firecrawl": {
+    "classification": "defect",
+    "n_substantive": 3,
+    "n_cosmetic": 2,
+    "hallucinations": [],
+    "omissions": [],
+    "autocorrections": [
+     "URL 'www.unitropico.eduo.co' corregida a 'edu.co' (y se añade tilde 'unitrópico')"
+    ],
+    "table_fidelity": "Todas las filas y fechas correctas y en su fila; celdas combinadas (colspan=2) correctas; fila …",
+    "corrections": [
+     {
+      "type": "substantive",
+      "image": "www.unitropico.eduo.co",
+      "version": "www.unitrópico.edu.co",
+      "wrong_tokens": [
+       "www.unitrópico.edu.co"
+      ],
+      "kind": "autocorrection"
+     },
+     {
+      "type": "substantive",
+      "image": "artículo 5 del presente acto",
+      "version": "articulo 5 del presente acto",
+      "wrong_tokens": [
+       "articulo"
+      ],
+      "kind": "accent"
+     },
+     {
+      "type": "substantive",
+      "image": "Si la información del estudiante",
+      "version": "Si la información de estudiante",
+      "wrong_tokens": [
+       "de"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "cosmetic",
+      "image": "fila de continuación (datos de Verificación)",
+      "version": "marcada como <thead>/<th>",
+      "wrong_tokens": [],
+      "kind": "structure"
+     },
+     {
+      "type": "cosmetic",
+      "image": "encabezado logo y pie de página",
+      "version": "(omitidos)",
+      "wrong_tokens": [],
+      "kind": "omission"
+     }
+    ],
+    "facts_ok": 8,
+    "facts_total": 10,
+    "notes": "La tilde sobre la 'o' de la URL: en la imagen hay motas de ruido …",
+    "n_hallucinations": 0
+   },
+   "critical_facts": [
+    {
+     "fact": "Verificación Fecha Inicial",
+     "image": "11 de noviembre de 2025",
+     "azure": "11 de noviembre de 2025",
+     "azure_ok": true,
+     "firecrawl": "11 de noviembre de 2025",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Verificación Fecha Final",
+     "image": "21 de noviembre de 2025",
+     "azure": "21 de noviembre de 2025",
+     "azure_ok": true,
+     "firecrawl": "21 de noviembre de 2025",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Reunión Comité (1) fecha",
+     "image": "24 de noviembre de 2025",
+     "azure": "24 de noviembre de 2025",
+     "azure_ok": true,
+     "firecrawl": "24 de noviembre de 2025",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Publicación listado preliminar fecha",
+     "image": "24 de noviembre de 2025",
+     "azure": "24 de noviembre | de 2025 (partida en 2 celdas, fila sin actividad)",
+     "azure_ok": false,
+     "firecrawl": "24 de noviembre de 2025",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "URL listado preliminar (errata original 'eduo')",
+     "image": "www.unitropico.eduo.co",
+     "azure": "www.unitropico.eduo.co",
+     "azure_ok": true,
+     "firecrawl": "www.unitrópico.edu.co",
+     "firecrawl_ok": false
+    },
+    {
+     "fact": "Correo reclamaciones",
+     "image": "bienestar@unitropico.edu.co",
+     "azure": "bienestar@unitropico.edu.co",
+     "azure_ok": true,
+     "firecrawl": "bienestar@unitropico.edu.co",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Reclamaciones Fecha Inicial",
+     "image": "24 de noviembre de 2025",
+     "azure": "kopi 24 de noviembre de 2025",
+     "azure_ok": false,
+     "firecrawl": "24 de noviembre de 2025",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Reclamaciones Fecha Final",
+     "image": "27 de noviembre de 2025 6:00 p.m.",
+     "azure": "27 de noviembre de 2025 6:00 p.m. | MI",
+     "azure_ok": false,
+     "firecrawl": "27 de noviembre de 2025 6:00 p.m.",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Reunión Comité (2) fecha",
+     "image": "28 de noviembre de 2025",
+     "azure": "28 de noviembre de 2025",
+     "azure_ok": true,
+     "firecrawl": "28 de noviembre de 2025",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Artículo referido",
+     "image": "artículo 5",
+     "azure": "artículo 5",
+     "azure_ok": true,
+     "firecrawl": "articulo 5",
+     "firecrawl_ok": false
+    }
+   ],
+   "comparative_note_blind": "B tiene estructura y fechas impecables pero autocorrige la URL con errata ('eduo'→'edu') y pierde …"
+  },
+  {
+   "tag": "p04",
+   "page_id": "01-res-cbu-002-2025-p14",
+   "physical_page": 14,
+   "blind_assignment": {
+    "A": "firecrawl",
+    "B": "azure"
+   },
+   "azure": {
+    "classification": "minor",
+    "n_substantive": 0,
+    "n_cosmetic": 5,
+    "hallucinations": [],
+    "omissions": [],
+    "autocorrections": [],
+    "table_fidelity": "5 filas, colspan=2 correctos; todas las fechas y plazos en su fila. Sin cabeceras repetidas …",
+    "corrections": [
+     {
+      "type": "cosmetic",
+      "image": "002 de '2025 (mota de ruido antes de 2025)",
+      "version": "002 de '2025",
+      "wrong_tokens": [
+       "'"
+      ],
+      "kind": "other",
+      "uncertain": true
+     },
+     {
+      "type": "cosmetic",
+      "image": "El primer pago (mota de ruido)",
+      "version": "·El primer pago",
+      "wrong_tokens": [
+       "·"
+      ],
+      "kind": "other"
+     },
+     {
+      "type": "cosmetic",
+      "image": "del Trópico Americano (pie)",
+      "version": "del Tropico Americano",
+      "wrong_tokens": [
+       "Tropico"
+      ],
+      "kind": "accent"
+     },
+     {
+      "type": "cosmetic",
+      "image": "fila de continuación (Respuesta de reclamaciones)",
+      "version": "marcada como <th>",
+      "wrong_tokens": [],
+      "kind": "structure"
+     },
+     {
+      "type": "cosmetic",
+      "image": "iconos del pie",
+      "version": "®",
+      "wrong_tokens": [
+       "®"
+      ],
+      "kind": "other"
+     }
+    ],
+    "facts_ok": 10,
+    "facts_total": 11,
+    "notes": "El apóstrofo en '2025 reproduce una mota visible en la imagen (literal, no error de …",
+    "n_hallucinations": 0
+   },
+   "firecrawl": {
+    "classification": "defect",
+    "n_substantive": 4,
+    "n_cosmetic": 2,
+    "hallucinations": [],
+    "omissions": [],
+    "autocorrections": [],
+    "table_fidelity": "5 filas, colspan=2 correctos en las filas de fecha única; todas las fechas en su …",
+    "corrections": [
+     {
+      "type": "substantive",
+      "image": "página web de Unitrópico www.unitropico.edu.co,",
+      "version": "página web de Unitrófico www.unitropico.edu.co,",
+      "wrong_tokens": [
+       "Unitrófico"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "página web de Unitrópico www.unitropico.edu.co micrositio",
+      "version": "página web de Unitrófico www.unitropico.edu.co micrositio",
+      "wrong_tokens": [
+       "Unitrófico"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "Publicación Listado Final de Beneficiarios.",
+      "version": "Publicación Listado de Final Beneficiarios.",
+      "wrong_tokens": [
+       "de Final"
+      ],
+      "kind": "structure"
+     },
+     {
+      "type": "substantive",
+      "image": "a nombre del estudiante beneficiario",
+      "version": "a nombre de estudiante beneficiario",
+      "wrong_tokens": [
+       "de"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "cosmetic",
+      "image": "fila de continuación (Respuesta de reclamaciones)",
+      "version": "marcada como <thead>/<th>",
+      "wrong_tokens": [],
+      "kind": "structure"
+     },
+     {
+      "type": "cosmetic",
+      "image": "encabezado logo y pie de página",
+      "version": "(omitidos)",
+      "wrong_tokens": [],
+      "kind": "omission"
+     }
+    ],
+    "facts_ok": 10,
+    "facts_total": 11,
+    "notes": "Orden de palabras alterado en el título de actividad (lectura de columna justificada).",
+    "n_hallucinations": 0
+   },
+   "critical_facts": [
+    {
+     "fact": "Respuesta reclamaciones Fecha Inicial",
+     "image": "03 de diciembre de 2025",
+     "azure": "03 de diciembre de 2025",
+     "azure_ok": true,
+     "firecrawl": "03 de diciembre de 2025",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Respuesta reclamaciones Fecha Final",
+     "image": "05 de diciembre de 2025",
+     "azure": "05 de diciembre de 2025",
+     "azure_ok": true,
+     "firecrawl": "05 de diciembre de 2025",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "URL Respuesta reclamaciones",
+     "image": "www.unitropico.edu.co",
+     "azure": "www.unitropico.edu.co",
+     "azure_ok": true,
+     "firecrawl": "www.unitropico.edu.co",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Publicación listado final fecha",
+     "image": "09 de diciembre de 2025",
+     "azure": "09 de diciembre de 2025",
+     "azure_ok": true,
+     "firecrawl": "09 de diciembre de 2025",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "URL listado final",
+     "image": "www.unitropico.edu.co",
+     "azure": "www.unitropico.edu.co",
+     "azure_ok": true,
+     "firecrawl": "www.unitropico.edu.co",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Recepción documentos plazo",
+     "image": "Los primeros 5 días del inicio del periodo académico 2026-A.",
+     "azure": "Los primeros 5 días del inicio del periodo académico 2026-A.",
+     "azure_ok": true,
+     "firecrawl": "Los primeros 5 días del inicio del periodo académico 2026-A.",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Certificación bancaria antigüedad",
+     "image": "no mayor a 30 días",
+     "azure": "no mayor a 30 días",
+     "azure_ok": true,
+     "firecrawl": "no mayor a 30 días",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Convocatoria Pública No.",
+     "image": "No. 002 de 2025",
+     "azure": "No. 002 de '2025",
+     "azure_ok": false,
+     "firecrawl": "No. 002 de 2025",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Primer pago",
+     "image": "primeros 25 días hábiles",
+     "azure": "primeros 25 días hábiles",
+     "azure_ok": true,
+     "firecrawl": "primeros 25 días hábiles",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Entregas restantes",
+     "image": "los primeros 15 días",
+     "azure": "los primeros 15 días",
+     "azure_ok": true,
+     "firecrawl": "los primeros 15 días",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Nombre institución (2 veces)",
+     "image": "Unitrópico",
+     "azure": "Unitrópico",
+     "azure_ok": true,
+     "firecrawl": "Unitrófico",
+     "firecrawl_ok": false
+    }
+   ],
+   "comparative_note_blind": "B es prácticamente fiel en todo el cuerpo y la tabla. A mantiene todas las …"
+  },
+  {
+   "tag": "p05",
+   "page_id": "02-documento-tecnico-p16",
+   "physical_page": 16,
+   "blind_assignment": {
+    "A": "firecrawl",
+    "B": "azure"
+   },
+   "azure": {
+    "classification": "defect",
+    "n_substantive": 1,
+    "n_cosmetic": 1,
+    "hallucinations": [
+     "'8' en 'académica 8' (lectura errónea de 's'; dígito no presente en la imagen)"
+    ],
+    "omissions": [],
+    "autocorrections": [],
+    "table_fidelity": "n/a (diagrama, no tabla). Cuadros transcritos en su nivel correcto; texto preserva cortes de palabra …",
+    "corrections": [
+     {
+      "type": "substantive",
+      "image": "académica s",
+      "version": "académica 8",
+      "wrong_tokens": [
+       "8"
+      ],
+      "kind": "misread",
+      "note": "cifra '8' inexistente; la imagen tiene 's' (fin de 'académicas' partido)"
+     },
+     {
+      "type": "cosmetic",
+      "image": "orden espacial: 'Oferta que no satisface...' bajo 'Insuficiencia en la oferta...'",
+      "version": "colocado al final de la lista de causas indirectas",
+      "wrong_tokens": [],
+      "kind": "structure"
+     }
+    ],
+    "facts_ok": 10,
+    "facts_total": 11,
+    "notes": "Transcripción del diagrama casi perfecta y literal (conserva 'partipación', 'capacitacióny', 'capacidadesy', cortes 'sostenimie nto'). La …",
+    "n_hallucinations": 1
+   },
+   "firecrawl": {
+    "classification": "defect",
+    "n_substantive": 15,
+    "n_cosmetic": 2,
+    "hallucinations": [
+     "'intra-maternal/hospital' (inventado)",
+     "'inclusión pedagogica' x2 (imagen: inclusión productiva)",
+     "'Limited atención hacia la implementación...' (cuadro inexistente)",
+     "'Limitada/Limited oferta de capacitaciones transversales de los' (no existe así; duplicado)",
+     "'hacia la inclusión de los jóvenes y los necesidades de participación'",
+     "'vita eductiva'",
+     "Causas indirectas duplicadas bajo CAUSAS DIRECTAS"
+    ],
+    "omissions": [
+     "Cuadro 'limitadas competencias transversales de los [jóvenes]'",
+     "Cuadro 'Limitado acompañamiento ... educación post gradual'",
+     "Cuadro 'Limitada oferta de capacitación y acompañamiento ... competencias transversales'",
+     "Cuadro 'Bajas capacidades y competencias para la participación social'",
+     "Número de página 16"
+    ],
+    "autocorrections": [
+     "'partipación' (errata del original) escrito como 'participación'"
+    ],
+    "table_fidelity": "n/a (diagrama de árbol de problemas; no hay tabla). Asignación de cuadros a niveles directo/indirecto …",
+    "corrections": [
+     {
+      "type": "substantive",
+      "image": "Bajas competenci as académica s",
+      "version": "Bajs competenci de academica a",
+      "wrong_tokens": [
+       "Bajs",
+       "de",
+       "academica",
+       "a"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "Bajos ingresos para el sostenimie nto",
+      "version": "Bajs ingreso para la sostenimiento",
+      "wrong_tokens": [
+       "Bajs",
+       "ingreso",
+       "la"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "Limitada orientación vocacional",
+      "version": "Limited orientación vocacional",
+      "wrong_tokens": [
+       "Limited"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "Insuficien cia en la oferta educativa",
+      "version": "Insuficiencia en la vita eductiva",
+      "wrong_tokens": [
+       "vita",
+       "eductiva"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "Insuficien cia en la oferta educativa y de bajo interés",
+      "version": "Insuficiencia en la vita eductiva y debajo interés",
+      "wrong_tokens": [
+       "vita",
+       "eductiva",
+       "debajo"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "limitadas competencias transversales de los",
+      "version": "Limitada oferta de capacitaciones transversales de los",
+      "wrong_tokens": [
+       "Limitada",
+       "oferta",
+       "capacitaciones"
+      ],
+      "kind": "hallucination"
+     },
+     {
+      "type": "substantive",
+      "image": "(cuadro no existe)",
+      "version": "Limited oferta de capacitaciones transversales de los",
+      "wrong_tokens": [
+       "Limited",
+       "oferta",
+       "capacitaciones"
+      ],
+      "kind": "hallucination"
+     },
+     {
+      "type": "substantive",
+      "image": "Limitado acompañamiento para la gestión de oportunidades hacia la inclusión productiva y/o educación post gradual",
+      "version": "Limited atención hacia la implementación de rutas específicas para la inclusión pedagogica...",
+      "wrong_tokens": [
+       "Limited",
+       "atención",
+       "pedagogica"
+      ],
+      "kind": "hallucination"
+     },
+     {
+      "type": "substantive",
+      "image": "Baja articulación intra e interinstitucional",
+      "version": "Baja articulation intra-maternal/hospital",
+      "wrong_tokens": [
+       "articulation",
+       "intra-maternal/hospital"
+      ],
+      "kind": "hallucination"
+     },
+     {
+      "type": "substantive",
+      "image": "inclusión productiva de la población beneficiaria",
+      "version": "inclusión pedagogica de la población beneficiaria",
+      "wrong_tokens": [
+       "pedagogica"
+      ],
+      "kind": "hallucination"
+     },
+     {
+      "type": "substantive",
+      "image": "Bajas capacidades y competencias para la participación social",
+      "version": "Bajs competenci de academica a",
+      "wrong_tokens": [
+       "Bajs",
+       "competenci",
+       "de",
+       "academica",
+       "a"
+      ],
+      "kind": "hallucination"
+     },
+     {
+      "type": "substantive",
+      "image": "Apatía de los jóvenes",
+      "version": "Apatia de los jóvenes",
+      "wrong_tokens": [
+       "Apatia"
+      ],
+      "kind": "accent"
+     },
+     {
+      "type": "substantive",
+      "image": "hacia las iniciativas de los jóvenes y los espacios de partipación",
+      "version": "hacia la inclusión de los jóvenes y los necesidades de participación",
+      "wrong_tokens": [
+       "la",
+       "inclusión",
+       "necesidades",
+       "participación"
+      ],
+      "kind": "hallucination"
+     },
+     {
+      "type": "substantive",
+      "image": "Limitada oferta de capacitacióny acompañamiento a los jóvenes para fortalecer capacidadesy competencias transversales",
+      "version": "(omitido)",
+      "wrong_tokens": [],
+      "kind": "omission"
+     },
+     {
+      "type": "substantive",
+      "image": "(Causas indirectas)",
+      "version": "repite bajo CAUSAS DIRECTAS cuatro causas indirectas y 'Bajs competenci...' tres veces",
+      "wrong_tokens": [
+       "Bajs competenci de academica a"
+      ],
+      "kind": "structure"
+     },
+     {
+      "type": "cosmetic",
+      "image": "Prosperidad Social (logo)",
+      "version": "## Prosperidad Social / Prosperidad Social",
+      "wrong_tokens": [
+       "## Prosperidad Social"
+      ],
+      "kind": "structure"
+     },
+     {
+      "type": "cosmetic",
+      "image": "16",
+      "version": "(omitido)",
+      "wrong_tokens": [],
+      "kind": "omission"
+     }
+    ],
+    "facts_ok": 1,
+    "facts_total": 11,
+    "notes": "El párrafo de Diagnóstico es fiel. La transcripción del diagrama está gravemente corrupta, con múltiples …",
+    "n_hallucinations": 7
+   },
+   "critical_facts": [
+    {
+     "fact": "Causa indirecta 1",
+     "image": "Bajas competenci as académica s",
+     "azure": "Bajas competenci as académica 8",
+     "azure_ok": false,
+     "firecrawl": "Bajs competenci de academica a",
+     "firecrawl_ok": false
+    },
+    {
+     "fact": "Causa indirecta 2",
+     "image": "Bajos ingresos para el sostenimie nto",
+     "azure": "Bajos ingresos para el sostenimie nto",
+     "azure_ok": true,
+     "firecrawl": "Bajs ingreso para la sostenimiento",
+     "firecrawl_ok": false
+    },
+    {
+     "fact": "Causa indirecta 4",
+     "image": "Insuficien cia en la oferta educativa y de bajo interés para la población joven",
+     "azure": "Insuficien cia en la oferta educativa y de bajo interés...",
+     "azure_ok": true,
+     "firecrawl": "Insuficiencia en la vita eductiva y de bajo interés...",
+     "firecrawl_ok": false
+    },
+    {
+     "fact": "Causa directa 2",
+     "image": "limitadas competencias transversales de los [jóvenes]",
+     "azure": "limitadas competencias transversales de los",
+     "azure_ok": true,
+     "firecrawl": "(ausente; sustituida por 'Limitada oferta de capacitaciones transversales de los')",
+     "firecrawl_ok": false
+    },
+    {
+     "fact": "Causa directa 3",
+     "image": "Limitado acompañamiento ... inclusión productiva y/o educación post gradual",
+     "azure": "Limitado acompañamiento ... inclusión productiva y/o educación post gradual",
+     "azure_ok": true,
+     "firecrawl": "(ausente; 'Limited atención hacia la implementación...')",
+     "firecrawl_ok": false
+    },
+    {
+     "fact": "Causa indirecta articulación",
+     "image": "Baja articulación intra e interinstitucional",
+     "azure": "Baja articulación intra e interinstitucional",
+     "azure_ok": true,
+     "firecrawl": "Baja articulation intra-maternal/hospital",
+     "firecrawl_ok": false
+    },
+    {
+     "fact": "Destino rutas",
+     "image": "inclusión productiva de la población beneficiaria",
+     "azure": "inclusión productiva de la población beneficiaria",
+     "azure_ok": true,
+     "firecrawl": "inclusión pedagogica de la población beneficiaria",
+     "firecrawl_ok": false
+    },
+    {
+     "fact": "Causa indirecta participación",
+     "image": "Bajas capacidades y competencias para la participación social",
+     "azure": "Bajas capacidades y competencias para la participación social",
+     "azure_ok": true,
+     "firecrawl": "Bajs competenci de academica a",
+     "firecrawl_ok": false
+    },
+    {
+     "fact": "Falta de promoción (errata original)",
+     "image": "hacia las iniciativas de los jóvenes y los espacios de partipación",
+     "azure": "hacia las iniciativas de los jóvenes y los espacios de partipación",
+     "azure_ok": true,
+     "firecrawl": "hacia la inclusión de los jóvenes y los necesidades de participación",
+     "firecrawl_ok": false
+    },
+    {
+     "fact": "Problema central",
+     "image": "Limitadas oportunidades ... superar las condiciones de exclusión social y productiva",
+     "azure": "idéntico",
+     "azure_ok": true,
+     "firecrawl": "idéntico",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Número de página",
+     "image": "16",
+     "azure": "16",
+     "azure_ok": true,
+     "firecrawl": "(omitido)",
+     "firecrawl_ok": false
+    }
+   ],
+   "comparative_note_blind": "B es muy superior: diagrama fiel con un único carácter mal leído ('8'). A inventa …"
+  },
+  {
+   "tag": "p06",
+   "page_id": "02-documento-tecnico-p18",
+   "physical_page": 18,
+   "blind_assignment": {
+    "A": "azure",
+    "B": "firecrawl"
+   },
+   "azure": {
+    "classification": "minor",
+    "n_substantive": 0,
+    "n_cosmetic": 3,
+    "hallucinations": [],
+    "omissions": [],
+    "autocorrections": [],
+    "table_fidelity": "Gráficos transcritos como listas: donut sin emparejar cifra-categoría (no hay emparejamiento erróneo); pirámide con cada …",
+    "corrections": [
+     {
+      "type": "cosmetic",
+      "image": "leyenda ■ A, ■ C",
+      "version": "'.A', '.C'",
+      "wrong_tokens": [
+       ".A",
+       ".C"
+      ],
+      "kind": "other"
+     },
+     {
+      "type": "cosmetic",
+      "image": "(etiquetas del donut sin emparejar con leyenda)",
+      "version": "valores y leyenda listados por separado",
+      "wrong_tokens": [],
+      "kind": "structure"
+     },
+     {
+      "type": "cosmetic",
+      "image": "Ilustración No. 5 ... / título del gráfico 'Años promedio...'",
+      "version": "caption y título del gráfico fusionados en una línea",
+      "wrong_tokens": [],
+      "kind": "structure"
+     }
+    ],
+    "facts_ok": 16,
+    "facts_total": 16,
+    "notes": "Todas las cifras correctas y con coma decimal original. 'SIS BEN' refleja el espaciado visible …",
+    "n_hallucinations": 0
+   },
+   "firecrawl": {
+    "classification": "defect",
+    "n_substantive": 6,
+    "n_cosmetic": 4,
+    "hallucinations": [
+     "Cabecera en inglés 'Category | Share (%)' inexistente",
+     "Asignación GRUPO SIS BEN = 33 (valor no corresponde a esa entrada)"
+    ],
+    "omissions": [
+     "Valor 7% de D (D queda vacío)"
+    ],
+    "autocorrections": [],
+    "table_fidelity": "Donut convertido en tabla con emparejamiento erróneo en las 5 filas: todas las cifras desplazadas …",
+    "corrections": [
+     {
+      "type": "substantive",
+      "image": "A 33% (por color)",
+      "version": "| A | 35 |",
+      "wrong_tokens": [
+       "35"
+      ],
+      "kind": "misread",
+      "note": "emparejamiento cifra-categoría desplazado una posición"
+     },
+     {
+      "type": "substantive",
+      "image": "B 35%",
+      "version": "| B | 25 |",
+      "wrong_tokens": [
+       "25"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "C 25%",
+      "version": "| C | 7 |",
+      "wrong_tokens": [
+       "7"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "D 7%",
+      "version": "| D |  |",
+      "wrong_tokens": [],
+      "kind": "omission"
+     },
+     {
+      "type": "substantive",
+      "image": "GRUPO SISBEN (sin valor; es encabezado de leyenda)",
+      "version": "| GRUPO SIS BEN | 33 |",
+      "wrong_tokens": [
+       "33"
+      ],
+      "kind": "hallucination"
+     },
+     {
+      "type": "substantive",
+      "image": "(sin cabecera en la imagen)",
+      "version": "| Category | Share (%) |",
+      "wrong_tokens": [
+       "Category",
+       "Share (%)"
+      ],
+      "kind": "hallucination"
+     },
+     {
+      "type": "cosmetic",
+      "image": "(sin cabecera de columna)",
+      "version": "| Clase social | Años promedio de educación |",
+      "wrong_tokens": [
+       "Clase social"
+      ],
+      "kind": "structure"
+     },
+     {
+      "type": "cosmetic",
+      "image": "8,2 / 9,1 / 9,5 / 11,5 / 13,6",
+      "version": "8.2 / 9.1 / 9.5 / 11.5 / 13.6",
+      "wrong_tokens": [],
+      "kind": "other"
+     },
+     {
+      "type": "cosmetic",
+      "image": "Años promedio de educación por clase social (título del gráfico)",
+      "version": "(omitido; solo en cabecera)",
+      "wrong_tokens": [],
+      "kind": "omission"
+     },
+     {
+      "type": "cosmetic",
+      "image": "18",
+      "version": "(omitido)",
+      "wrong_tokens": [],
+      "kind": "omission"
+     }
+    ],
+    "facts_ok": 10,
+    "facts_total": 16,
+    "notes": "Texto corrido fiel. Error grave en datos críticos del donut por emparejamiento cifra-categoría.",
+    "n_hallucinations": 2
+   },
+   "critical_facts": [
+    {
+     "fact": "Donut: A",
+     "image": "A = 33% (color azul medio-oscuro, segmento superior derecho)",
+     "azure": "33% listado sin emparejar",
+     "azure_ok": true,
+     "firecrawl": "A = 35",
+     "firecrawl_ok": false
+    },
+    {
+     "fact": "Donut: B",
+     "image": "B = 35%",
+     "azure": "35% listado sin emparejar",
+     "azure_ok": true,
+     "firecrawl": "B = 25",
+     "firecrawl_ok": false
+    },
+    {
+     "fact": "Donut: C",
+     "image": "C = 25%",
+     "azure": "25% listado sin emparejar",
+     "azure_ok": true,
+     "firecrawl": "C = 7",
+     "firecrawl_ok": false
+    },
+    {
+     "fact": "Donut: D",
+     "image": "D = 7%",
+     "azure": "7% listado sin emparejar",
+     "azure_ok": true,
+     "firecrawl": "D = (vacío)",
+     "firecrawl_ok": false
+    },
+    {
+     "fact": "Donut: GRUPO SISBEN",
+     "image": "entrada de leyenda sin segmento/valor",
+     "azure": "GRUPO SIS BEN (sin valor)",
+     "azure_ok": true,
+     "firecrawl": "GRUPO SIS BEN = 33",
+     "firecrawl_ok": false
+    },
+    {
+     "fact": "Pobreza extrema",
+     "image": "8,2",
+     "azure": "8,2",
+     "azure_ok": true,
+     "firecrawl": "8.2",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Pobreza moderada",
+     "image": "9,1",
+     "azure": "9,1",
+     "azure_ok": true,
+     "firecrawl": "9.1",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Vulnerables",
+     "image": "9,5",
+     "azure": "9,5",
+     "azure_ok": true,
+     "firecrawl": "9.5",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Clase media",
+     "image": "11,5",
+     "azure": "11,5",
+     "azure_ok": true,
+     "firecrawl": "11.5",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Clase alta",
+     "image": "13,6",
+     "azure": "13,6",
+     "azure_ok": true,
+     "firecrawl": "13.6",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Rango de edad",
+     "image": "14 y 28 años",
+     "azure": "14 y 28 años",
+     "azure_ok": true,
+     "firecrawl": "14 y 28 años",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Diferencias años",
+     "image": "4 y 3 ... 5 y 4",
+     "azure": "4 y 3 ... 5 y 4",
+     "azure_ok": true,
+     "firecrawl": "4 y 3 ... 5 y 4",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Año MEN",
+     "image": "(2017)",
+     "azure": "(2017)",
+     "azure_ok": true,
+     "firecrawl": "(2017)",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Estudiantes grado 11",
+     "image": "485 mil",
+     "azure": "485 mil",
+     "azure_ok": true,
+     "firecrawl": "485 mil",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Ingresaron",
+     "image": "184.013",
+     "azure": "184.013",
+     "azure_ok": true,
+     "firecrawl": "184.013",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Página",
+     "image": "18",
+     "azure": "18",
+     "azure_ok": true,
+     "firecrawl": "(omitido)",
+     "firecrawl_ok": false
+    }
+   ],
+   "comparative_note_blind": "A es fiel: lista todas las cifras sin emparejarlas, sin errores. B estructura el donut …"
+  },
+  {
+   "tag": "p07",
+   "page_id": "02-documento-tecnico-p20",
+   "physical_page": 20,
+   "blind_assignment": {
+    "A": "firecrawl",
+    "B": "azure"
+   },
+   "azure": {
+    "classification": "minor",
+    "n_substantive": 0,
+    "n_cosmetic": 1,
+    "hallucinations": [],
+    "omissions": [],
+    "autocorrections": [],
+    "table_fidelity": "Gráfico transcrito como lista plana: las 36 etiquetas, ejes y leyenda presentes y literales; no …",
+    "corrections": [
+     {
+      "type": "cosmetic",
+      "image": "(etiquetas emparejadas a series/años por posición)",
+      "version": "36 valores listados sin asociarlos a año ni serie",
+      "wrong_tokens": [],
+      "kind": "structure"
+     }
+    ],
+    "facts_ok": 21,
+    "facts_total": 21,
+    "notes": "Todas las cifras exactas con coma decimal original; texto corrido fiel; incluye encabezado y página.",
+    "n_hallucinations": 0
+   },
+   "firecrawl": {
+    "classification": "defect",
+    "n_substantive": 2,
+    "n_cosmetic": 4,
+    "hallucinations": [
+     "Valor 17.9 (Tecnológico 2010) no existe en el gráfico"
+    ],
+    "omissions": [
+     "Valor 22,46% (Técnico profesional 2010)"
+    ],
+    "autocorrections": [],
+    "table_fidelity": "Tabla reconstruida del gráfico de líneas: 34/36 celdas correctas en su año/serie; fila 2010 errónea …",
+    "corrections": [
+     {
+      "type": "substantive",
+      "image": "Técnico profesional 2010: 22,46%",
+      "version": "| 2010 | ... | 18.15 |",
+      "wrong_tokens": [
+       "18.15"
+      ],
+      "kind": "misread",
+      "note": "cifra de Tecnológico asignada a Técnico profesional"
+     },
+     {
+      "type": "substantive",
+      "image": "Tecnológico 2010: 18,15%",
+      "version": "| 17.9 |",
+      "wrong_tokens": [
+       "17.9"
+      ],
+      "kind": "hallucination"
+     },
+     {
+      "type": "cosmetic",
+      "image": "(sin cabecera 'Category')",
+      "version": "| Category | ...",
+      "wrong_tokens": [
+       "Category"
+      ],
+      "kind": "structure"
+     },
+     {
+      "type": "cosmetic",
+      "image": "9,89% (coma decimal)",
+      "version": "9.89 (punto)",
+      "wrong_tokens": [],
+      "kind": "other"
+     },
+     {
+      "type": "cosmetic",
+      "image": "Prosperidad Social (encabezado)",
+      "version": "(omitido)",
+      "wrong_tokens": [],
+      "kind": "omission"
+     },
+     {
+      "type": "cosmetic",
+      "image": "20",
+      "version": "(omitido)",
+      "wrong_tokens": [],
+      "kind": "omission"
+     }
+    ],
+    "facts_ok": 18,
+    "facts_total": 21,
+    "notes": "Texto corrido idéntico y fiel. Estructura útil pero con error grave en fila 2010.",
+    "n_hallucinations": 1
+   },
+   "critical_facts": [
+    {
+     "fact": "Técnico profesional 2010",
+     "image": "22,46%",
+     "azure": "22,46% listado (sin emparejar)",
+     "azure_ok": true,
+     "firecrawl": "18.15 (valor de Tecnológico)",
+     "firecrawl_ok": false
+    },
+    {
+     "fact": "Tecnológico 2010",
+     "image": "18,15%",
+     "azure": "18,15% listado (sin emparejar)",
+     "azure_ok": true,
+     "firecrawl": "17.9 (inventado)",
+     "firecrawl_ok": false
+    },
+    {
+     "fact": "Técnico profesional 2012 (máximo)",
+     "image": "24,81%",
+     "azure": "24,81%",
+     "azure_ok": true,
+     "firecrawl": "24.81",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Técnico profesional 2020",
+     "image": "13,65%",
+     "azure": "13,65%",
+     "azure_ok": true,
+     "firecrawl": "13.65",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Tecnológico 2020",
+     "image": "13,26%",
+     "azure": "13,26%",
+     "azure_ok": true,
+     "firecrawl": "13.26",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Tecnológico 2021",
+     "image": "15,32%",
+     "azure": "15,32%",
+     "azure_ok": true,
+     "firecrawl": "15.32",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Universitario 2010..2021 (12 valores)",
+     "image": "9,89, 9,53, 8,98, 9,07, 8,60, 9,04, 8,19, 9,15, 8,79, 8,25, 8,02, 8,89",
+     "azure": "todos presentes",
+     "azure_ok": true,
+     "firecrawl": "todos correctos",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Resto Técnico 2011-2021",
+     "image": "22,20, 24,81, 20,60, 20,12, 21,39, 20,41, 19,70, 17,41, 18,05, 13,65, 18,79",
+     "azure": "presentes",
+     "azure_ok": true,
+     "firecrawl": "correctos",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Resto Tecnológico 2011-2021",
+     "image": "14,48, 10,99, 11,51, 13,51, 12,02, 14,02, 10,52, 10,75, 13,20, 13,26, 15,32",
+     "azure": "presentes",
+     "azure_ok": true,
+     "firecrawl": "correctos",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Saber 11 nivel bajo",
+     "image": "42%",
+     "azure": "42%",
+     "azure_ok": true,
+     "firecrawl": "42%",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Ingresos <2 SMMLV",
+     "image": "60%",
+     "azure": "60%",
+     "azure_ok": true,
+     "firecrawl": "60%",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Matrícula estratos 1,2 y 3",
+     "image": "97%",
+     "azure": "97%",
+     "azure_ok": true,
+     "firecrawl": "97%",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Menores de 20 años",
+     "image": "94.7%",
+     "azure": "94.7%",
+     "azure_ok": true,
+     "firecrawl": "94.7%",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Bogotá",
+     "image": "33,8%",
+     "azure": "33,8%",
+     "azure_ok": true,
+     "firecrawl": "33,8%",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Antioquia",
+     "image": "12,6%",
+     "azure": "12,6%",
+     "azure_ok": true,
+     "firecrawl": "12,6%",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Valle del Cauca",
+     "image": "7,2%",
+     "azure": "7,2%",
+     "azure_ok": true,
+     "firecrawl": "7,2%",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Santander",
+     "image": "2,8%",
+     "azure": "2,8%",
+     "azure_ok": true,
+     "firecrawl": "2,8%",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Atlántico",
+     "image": "5.6%",
+     "azure": "5.6%",
+     "azure_ok": true,
+     "firecrawl": "5.6%",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Concentración / resto",
+     "image": "62% ... 38%",
+     "azure": "62% ... 38%",
+     "azure_ok": true,
+     "firecrawl": "62% ... 38%",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Corte de datos",
+     "image": "cierre estadístico de 2022",
+     "azure": "cierre estadístico de 2022",
+     "azure_ok": true,
+     "firecrawl": "cierre estadístico de 2022",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Página",
+     "image": "20",
+     "azure": "20",
+     "azure_ok": true,
+     "firecrawl": "(omitido)",
+     "firecrawl_ok": false
+    }
+   ],
+   "comparative_note_blind": "B transcribe las 36 cifras del gráfico literalmente sin errores, aunque sin estructura. A da …"
+  },
+  {
+   "tag": "p08",
+   "page_id": "02-documento-tecnico-p22",
+   "physical_page": 22,
+   "blind_assignment": {
+    "A": "azure",
+    "B": "firecrawl"
+   },
+   "azure": {
+    "classification": "defect",
+    "n_substantive": 3,
+    "n_cosmetic": 4,
+    "hallucinations": [],
+    "omissions": [],
+    "autocorrections": [],
+    "table_fidelity": "Estructura correcta (colspan=3 'Desocupados', 3 filas de edad bien emparejadas, columnas hombre/mujer con cabecera vacía …",
+    "corrections": [
+     {
+      "type": "substantive",
+      "image": "11,3%",
+      "version": "11,39%",
+      "wrong_tokens": [
+       "11,39%"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "11,7%",
+      "version": "11,796",
+      "wrong_tokens": [
+       "11,796"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "11,8%",
+      "version": "11,89%",
+      "wrong_tokens": [
+       "11,89%"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "cosmetic",
+      "image": "Desarrollo–",
+      "version": "Desarrollo-",
+      "wrong_tokens": [
+       "Desarrollo-"
+      ],
+      "kind": "other"
+     },
+     {
+      "type": "cosmetic",
+      "image": "(…)",
+      "version": "( ... )",
+      "wrong_tokens": [
+       "( ... )"
+      ],
+      "kind": "other"
+     },
+     {
+      "type": "cosmetic",
+      "image": "inactividad³ / ocupados⁴ / activa⁵",
+      "version": "inactividad3 / ocupados4 / activa5",
+      "wrong_tokens": [
+       "inactividad3",
+       "ocupados4",
+       "activa5"
+      ],
+      "kind": "structure"
+     },
+     {
+      "type": "cosmetic",
+      "image": "14 – 19 años",
+      "version": "14 -19 años",
+      "wrong_tokens": [
+       "-19"
+      ],
+      "kind": "other"
+     }
+    ],
+    "facts_ok": 12,
+    "facts_total": 15,
+    "notes": "Prosa y notas al pie exactas; conserva la errata 'jóven'. Superíndices aplanados a dígitos pegados …",
+    "n_hallucinations": 0
+   },
+   "firecrawl": {
+    "classification": "minor",
+    "n_substantive": 0,
+    "n_cosmetic": 2,
+    "hallucinations": [],
+    "omissions": [],
+    "autocorrections": [],
+    "table_fidelity": "Correcta: colspan=3 'Desocupados', cabecera Edad + 2 columnas de iconos vacías, 3 filas con las …",
+    "corrections": [
+     {
+      "type": "cosmetic",
+      "image": "14 – 19 años",
+      "version": "14-19 años",
+      "wrong_tokens": [
+       "14-19"
+      ],
+      "kind": "other"
+     },
+     {
+      "type": "cosmetic",
+      "image": "Prosperidad Social (logo) / 22",
+      "version": "(omitidos)",
+      "wrong_tokens": [],
+      "kind": "omission"
+     }
+    ],
+    "facts_ok": 15,
+    "facts_total": 15,
+    "notes": "Texto literal, superíndices como <sup>, conserva 'jóven' y la raya en 'Desarrollo–'. Omite logo de …",
+    "n_hallucinations": 0
+   },
+   "critical_facts": [
+    {
+     "fact": "% ocupados",
+     "image": "46,68%",
+     "azure": "46,68%",
+     "azure_ok": true,
+     "firecrawl": "46,68%",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "% inactivos",
+     "image": "43,27%",
+     "azure": "43,27%",
+     "azure_ok": true,
+     "firecrawl": "43,27%",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "% desocupados PEA",
+     "image": "17,71%",
+     "azure": "17,71%",
+     "azure_ok": true,
+     "firecrawl": "17,71%",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "% mujeres inactivos",
+     "image": "56%",
+     "azure": "56%",
+     "azure_ok": true,
+     "firecrawl": "56%",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "rango edad mayor desempleo",
+     "image": "20 y 24 años",
+     "azure": "20 y 24 años",
+     "azure_ok": true,
+     "firecrawl": "20 y 24 años",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "año BID",
+     "image": "2009",
+     "azure": "2009",
+     "azure_ok": true,
+     "firecrawl": "2009",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "año GEIH fuente",
+     "image": "2019",
+     "azure": "2019",
+     "azure_ok": true,
+     "firecrawl": "2019",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "año estudio SAS & NU",
+     "image": "2021",
+     "azure": "2021",
+     "azure_ok": true,
+     "firecrawl": "2021",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Tabla 14-19 hombres",
+     "image": "11,3%",
+     "azure": "11,39%",
+     "azure_ok": false,
+     "firecrawl": "11,3%",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Tabla 14-19 mujeres",
+     "image": "11,7%",
+     "azure": "11,796",
+     "azure_ok": false,
+     "firecrawl": "11,7%",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Tabla 20-24 hombres",
+     "image": "21%",
+     "azure": "21%",
+     "azure_ok": true,
+     "firecrawl": "21%",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Tabla 20-24 mujeres",
+     "image": "27,6%",
+     "azure": "27,6%",
+     "azure_ok": true,
+     "firecrawl": "27,6%",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Tabla 25-28 hombres",
+     "image": "11,8%",
+     "azure": "11,89%",
+     "azure_ok": false,
+     "firecrawl": "11,8%",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Tabla 25-28 mujeres",
+     "image": "16,6%",
+     "azure": "16,6%",
+     "azure_ok": true,
+     "firecrawl": "16,6%",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Errata original 'población jóven' conservada",
+     "image": "jóven",
+     "azure": "jóven",
+     "azure_ok": true,
+     "firecrawl": "jóven",
+     "firecrawl_ok": true
+    }
+   ],
+   "comparative_note_blind": "B es fiel en todo, incluida la tabla. A transcribe bien la prosa pero falla …"
+  },
+  {
+   "tag": "p09",
+   "page_id": "02-documento-tecnico-p54",
+   "physical_page": 54,
+   "blind_assignment": {
+    "A": "firecrawl",
+    "B": "azure"
+   },
+   "azure": {
+    "classification": "defect",
+    "n_substantive": 3,
+    "n_cosmetic": 3,
+    "hallucinations": [],
+    "omissions": [],
+    "autocorrections": [],
+    "table_fidelity": "No hay tabla. Diagrama superior de 5 columnas leído en orden de filas visuales: las …",
+    "corrections": [
+     {
+      "type": "substantive",
+      "image": "largo plazo (título desvaído)",
+      "version": "argo plaza",
+      "wrong_tokens": [
+       "argo",
+       "plaza"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "Presupuesto General de la Nación. Proyecto de inversión \"BPIN ...",
+      "version": "viñetas de otras columnas intercaladas entre 'Nación.' y 'Proyecto de inversión'",
+      "wrong_tokens": [],
+      "kind": "structure"
+     },
+     {
+      "type": "substantive",
+      "image": "✓DPS: Subdirección General de Programas y Proyectos",
+      "version": "DPS: Subdirección General de / · SENA / ·Ley 2307 ... / Programas y Proyectos",
+      "wrong_tokens": [],
+      "kind": "structure"
+     },
+     {
+      "type": "cosmetic",
+      "image": "✓Alcaldías / ✓DNP / ✓DPS / ✓Direcciones Regionales",
+      "version": "v Alcaldías / / DNP / DPS / Direcciones Regionales",
+      "wrong_tokens": [
+       "v",
+       "/"
+      ],
+      "kind": "other"
+     },
+     {
+      "type": "cosmetic",
+      "image": "Actividades; Resultados de corto plazo (títulos desvaídos)",
+      "version": "(omitidos)",
+      "wrong_tokens": [],
+      "kind": "omission"
+     },
+     {
+      "type": "cosmetic",
+      "image": "•Entidades Territoriales",
+      "version": ". Entidades Territoriales",
+      "wrong_tokens": [
+       "."
+      ],
+      "kind": "other"
+     }
+    ],
+    "facts_ok": 14,
+    "facts_total": 14,
+    "notes": "Todas las palabras y cifras correctas (BPIN de 15 dígitos exacto, DNP, tildes), contenido completo …",
+    "n_hallucinations": 0
+   },
+   "firecrawl": {
+    "classification": "defect",
+    "n_substantive": 10,
+    "n_cosmetic": 3,
+    "hallucinations": [],
+    "omissions": [
+     "Casi toda la Ilustración No. 14: cajas Productos/Resultados de corto plazo/Resultados de mediano y largo …",
+     "Disyunción 'o' en 'pobreza o vulnerabilidad'"
+    ],
+    "autocorrections": [],
+    "table_fidelity": "No hay tabla; diagrama de insumos en 5 columnas: A respeta el orden por columna …",
+    "corrections": [
+     {
+      "type": "substantive",
+      "image": "BPIN 202300000000204",
+      "version": "BPIN 20230000000204",
+      "wrong_tokens": [
+       "20230000000204"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "Proyecto de inversión",
+      "version": "Proyecto de inversion",
+      "wrong_tokens": [
+       "inversion"
+      ],
+      "kind": "accent"
+     },
+     {
+      "type": "substantive",
+      "image": "pobreza o vulnerabilidad a nivel Nacional",
+      "version": "pobreza vulnerable a nivel Nacional",
+      "wrong_tokens": [
+       "vulnerable"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "$4.1 billones COP",
+      "version": "$4.1 billiones COP",
+      "wrong_tokens": [
+       "billiones"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "Alcaldías: Coordinadores municipales",
+      "version": "Alcaldas: Coordinadores municipales",
+      "wrong_tokens": [
+       "Alcaldas"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "Gestores indígenas",
+      "version": "Gestores indigenas",
+      "wrong_tokens": [
+       "indigenas"
+      ],
+      "kind": "accent"
+     },
+     {
+      "type": "substantive",
+      "image": "DNP: Dirección de Desarrollo Social",
+      "version": "DMP: Dirección de Desarrollo Social",
+      "wrong_tokens": [
+       "DMP"
+      ],
+      "kind": "misread"
+     },
+     {
+      "type": "substantive",
+      "image": "Módulos de capacitación",
+      "version": "Modulos de capacitación",
+      "wrong_tokens": [
+       "Modulos"
+      ],
+      "kind": "accent"
+     },
+     {
+      "type": "substantive",
+      "image": "Registraduría Nacional del Estado Civil",
+      "version": "Registraduria Nacional del Estado Civil",
+      "wrong_tokens": [
+       "Registraduria"
+      ],
+      "kind": "accent"
+     },
+     {
+      "type": "substantive",
+      "image": "Ilustración inferior: 3 columnas Productos / corto / mediano-largo plazo (~20 viñetas)",
+      "version": "solo 2 viñetas de Productos y un encabezado",
+      "wrong_tokens": [],
+      "kind": "omission"
+     },
+     {
+      "type": "cosmetic",
+      "image": "Ley 2294 de 2023. Plan",
+      "version": "Ley 2294 de 2023, Plan",
+      "wrong_tokens": [
+       "2023,"
+      ],
+      "kind": "other"
+     },
+     {
+      "type": "cosmetic",
+      "image": "Resultados de corto plazo (título desvaído)",
+      "version": "(omitido)",
+      "wrong_tokens": [],
+      "kind": "omission"
+     },
+     {
+      "type": "cosmetic",
+      "image": "Prosperidad Social (logo) / 54",
+      "version": "(omitidos)",
+      "wrong_tokens": [],
+      "kind": "omission"
+     }
+    ],
+    "facts_ok": 9,
+    "facts_total": 14,
+    "notes": "Buena estructura por columnas en el diagrama superior pero BPIN con un cero menos (14 …",
+    "n_hallucinations": 0
+   },
+   "critical_facts": [
+    {
+     "fact": "BPIN (15 dígitos: 2023 + 8 ceros + 204)",
+     "image": "202300000000204",
+     "azure": "202300000000204",
+     "azure_ok": true,
+     "firecrawl": "20230000000204",
+     "firecrawl_ok": false
+    },
+    {
+     "fact": "Monto presupuesto",
+     "image": "$4.1 billones COP",
+     "azure": "$4.1 billones COP",
+     "azure_ok": true,
+     "firecrawl": "$4.1 billiones COP",
+     "firecrawl_ok": false
+    },
+    {
+     "fact": "Ley 1532",
+     "image": "Ley 1532 de 2012",
+     "azure": "Ley 1532 de 2012",
+     "azure_ok": true,
+     "firecrawl": "Ley 1532 de 2012",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Ley 1948",
+     "image": "Ley 1948 de 2019",
+     "azure": "Ley 1948 de 2019",
+     "azure_ok": true,
+     "firecrawl": "Ley 1948 de 2019",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Resolución 01970",
+     "image": "Resolución No 01970 de 2012",
+     "azure": "Resolución No 01970 de 2012",
+     "azure_ok": true,
+     "firecrawl": "Resolución No 01970 de 2012",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Decreto 4290",
+     "image": "Decreto 4290 de 2005",
+     "azure": "Decreto 4290 de 2005",
+     "azure_ok": true,
+     "firecrawl": "Decreto 4290 de 2005",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Ley 2294 / PND",
+     "image": "Ley 2294 de 2023. Plan Nacional de Desarrollo 2022-2026",
+     "azure": "Ley 2294 de 2023. Plan Nacional de Desarrollo 2022-2026",
+     "azure_ok": true,
+     "firecrawl": "Ley 2294 de 2023, Plan Nacional de Desarrollo 2022-2026",
+     "firecrawl_ok": false
+    },
+    {
+     "fact": "Ley 2307",
+     "image": "Ley 2307 de 2023",
+     "azure": "Ley 2307 de 2023",
+     "azure_ok": true,
+     "firecrawl": "Ley 2307 de 2023",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Decreto Ley 1960",
+     "image": "Decreto Ley 1960 de 2023",
+     "azure": "Decreto Ley 1960 de 2023",
+     "azure_ok": true,
+     "firecrawl": "Decreto Ley 1960 de 2023",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Resolución 0037",
+     "image": "Resolución No 0037 del 25 de enero de 2024",
+     "azure": "Resolución No 0037 del 25 de enero de 2024",
+     "azure_ok": true,
+     "firecrawl": "Resolución No 0037 del 25 de enero de 2024",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Evaluación JeA año",
+     "image": "Jóvenes en Acción- 2017",
+     "azure": "Jóvenes en Acción- 2017",
+     "azure_ok": true,
+     "firecrawl": "Jóvenes en Acción - 2017",
+     "firecrawl_ok": false
+    },
+    {
+     "fact": "Sigla DNP",
+     "image": "DNP: Dirección de Desarrollo Social",
+     "azure": "DNP: Dirección de Desarrollo Social",
+     "azure_ok": true,
+     "firecrawl": "DMP: Dirección de Desarrollo Social",
+     "firecrawl_ok": false
+    },
+    {
+     "fact": "Sigla SIITM",
+     "image": "SIITM",
+     "azure": "SIITM",
+     "azure_ok": true,
+     "firecrawl": "SIITM",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "Sección / ilustración",
+     "image": "5.5.3. Teoría del cambio; Ilustración No. 14",
+     "azure": "5.5.3. Teoría del cambio; Ilustración No. 14",
+     "azure_ok": true,
+     "firecrawl": "5.5.3. Teoría del cambio; Ilustración No. 14",
+     "firecrawl_ok": true
+    }
+   ],
+   "comparative_note_blind": "B es textualmente exacto y completo (incluido el BPIN de 15 dígitos) pero desordena las …"
+  },
+  {
+   "tag": "p10",
+   "page_id": "03-manual-m-ip-36-p38",
+   "physical_page": 38,
+   "blind_assignment": {
+    "A": "firecrawl",
+    "B": "azure"
+   },
+   "azure": {
+    "classification": "ok",
+    "n_substantive": 0,
+    "n_cosmetic": 1,
+    "hallucinations": [],
+    "omissions": [],
+    "autocorrections": [],
+    "table_fidelity": "Encabezado con rowspan correcto. Tabla 5 en HTML con 2 filas de datos que reflejan …",
+    "corrections": [
+     {
+      "type": "cosmetic",
+      "image": "Tabla 6. Condicionalidad académica para SENA (título de tabla en negrita)",
+      "version": "# Tabla 6. Condicionalidad académica para SENA",
+      "wrong_tokens": [
+       "#"
+      ],
+      "kind": "structure"
+     }
+    ],
+    "facts_ok": 12,
+    "facts_total": 12,
+    "notes": "Fiel carácter a carácter, incluido el pie de página. Solo cambia el formato del título …",
+    "n_hallucinations": 0
+   },
+   "firecrawl": {
+    "classification": "defect",
+    "n_substantive": 1,
+    "n_cosmetic": 1,
+    "hallucinations": [],
+    "omissions": [
+     "pie 'Código: F-DE-3 Versión: 4' y 'Página 38 de 75' (cosmético)"
+    ],
+    "autocorrections": [],
+    "table_fidelity": "Encabezado: rowspan correcto en PROSPERIDAD SOCIAL. Tabla 5 en Markdown: Matrícula correcta. Permanencia y Excelencia …",
+    "corrections": [
+     {
+      "type": "substantive",
+      "image": "Permanencia ... 3.0 ... Excelencia ... 4.0 | (una única celda de frecuencia para ambas)",
+      "version": "| Excelencia Culmina el período académico ... 4.0 |  |",
+      "wrong_tokens": [
+       "|  |"
+      ],
+      "kind": "structure"
+     },
+     {
+      "type": "cosmetic",
+      "image": "Código: F-DE-3 Versión: 4 / Página 38 de 75",
+      "version": "(omitido)",
+      "wrong_tokens": [],
+      "kind": "omission"
+     }
+    ],
+    "facts_ok": 9,
+    "facts_total": 12,
+    "notes": "Texto literal perfecto (tildes, 3.0/4.0, período/periodo). Único error sustantivo: la división estructural de la fila …",
+    "n_hallucinations": 0
+   },
+   "critical_facts": [
+    {
+     "fact": "código del manual",
+     "image": "Código: M-IP-36",
+     "azure": "Código: M-IP-36",
+     "azure_ok": true,
+     "firecrawl": "Código: M-IP-36",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "versión del manual",
+     "image": "Versión: 1",
+     "azure": "Versión: 1",
+     "azure_ok": true,
+     "firecrawl": "Versión: 1",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "título tabla 5",
+     "image": "Tabla 5. Condicionalidad académica para IES",
+     "azure": "Tabla 5. Condicionalidad académica para IES",
+     "azure_ok": true,
+     "firecrawl": "Tabla 5. Condicionalidad académica para IES",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "promedio de permanencia",
+     "image": "3.0",
+     "azure": "3.0",
+     "azure_ok": true,
+     "firecrawl": "3.0",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "promedio de excelencia",
+     "image": "4.0",
+     "azure": "4.0",
+     "azure_ok": true,
+     "firecrawl": "4.0",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "frecuencia de matrícula",
+     "image": "Se debe cumplir por cada periodo académico, dos veces al año",
+     "azure": "idéntico",
+     "azure_ok": true,
+     "firecrawl": "idéntico",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "frecuencia de permanencia/excelencia (celda compartida)",
+     "image": "dos veces al año. + La TMC por excelencia es adicional a la de permanencia.",
+     "azure": "idéntico, en una sola fila que cubre Permanencia y Excelencia",
+     "azure_ok": true,
+     "firecrawl": "texto idéntico, pero Excelencia queda en una fila aparte con frecuencia vacía",
+     "firecrawl_ok": false
+    },
+    {
+     "fact": "tilde período/periodo",
+     "image": "'período' (columna izq.) / 'periodo' (columna der.)",
+     "azure": "período / periodo",
+     "azure_ok": true,
+     "firecrawl": "período / periodo",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "fuente",
+     "image": "Fuente: GIT Renta Joven, STMC- Prosperidad Social.",
+     "azure": "idéntico",
+     "azure_ok": true,
+     "firecrawl": "idéntico",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "título tabla 6",
+     "image": "Tabla 6. Condicionalidad académica para SENA",
+     "azure": "idéntico",
+     "azure_ok": true,
+     "firecrawl": "idéntico",
+     "firecrawl_ok": true
+    },
+    {
+     "fact": "código del formato",
+     "image": "Código: F-DE-3 Versión: 4",
+     "azure": "Código: F-DE-3 Versión: 4",
+     "azure_ok": true,
+     "firecrawl": "(omitido)",
+     "firecrawl_ok": false
+    },
+    {
+     "fact": "paginación",
+     "image": "Página 38 de 75",
+     "azure": "Página 38 de 75",
+     "azure_ok": true,
+     "firecrawl": "(omitido)",
+     "firecrawl_ok": false
+    }
+   ],
+   "comparative_note_blind": "El texto es idéntico y correcto en las dos versiones. B conserva la estructura real …"
+  }
+ ]
+}

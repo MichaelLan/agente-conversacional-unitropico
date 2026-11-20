@@ -4,6 +4,8 @@
 
 Datos por página y lista de correcciones en formato máquina: [`selective-ocr-v1-audit.json`](selective-ocr-v1-audit.json).
 
+> **Nota de corrección (2026-11-20):** la corrección propuesta para el BPIN de Documento Técnico p54 decía «2023000000000204» (16 dígitos), con un cero de más. El valor real, verificado sobre la imagen en la comparación ciega (`alt-ocr-pilot-v1-comparison`), es «202300000000204» (15 dígitos: 2023 + 8 ceros + 204). Firecrawl lo leyó como «20230000000204» (14 dígitos). Se corrigió solo esa entrada (resumen, tabla de la página y lista de correcciones); el resto del informe no cambia.
+
 ## Alcance y método
 
 - Lotes auditados (estado `complete` en `selective_send.py status`): 01-res-cbu-002-2025 (16 págs.), 02-documento-tecnico (17) y 03-manual-m-ip-36-1of2 (12). **No se auditan** el lote 04 (estado incierto) ni los lotes 05–07 (sin enviar).
@@ -61,7 +63,7 @@ Defectos de la auditoría previa: **corregidos en 27 páginas**, parcialmente en
    - La Ilustración 14 (02 p54) está casi ausente.
 6. **URL bibliográficas: el OCR no aporta nada.** Pierde los mismos guiones de corte de línea que el texto anterior (02 p57–p61).
 7. **Una fecha de cronograma omitida:** falta la fecha inicial de Inscripción, «28 de octubre de 2025» (01 p12).
-8. **Una cifra con dígitos perdidos:** el BPIN aparece como «20230000000204» y debe ser «2023000000000204» (02 p54).
+8. **Una cifra con dígitos perdidos:** el BPIN aparece como «20230000000204» y debe ser «202300000000204» (02 p54).
 
 Las erratas del original se conservan bien en general: «pueblo Room», «se llevas», «por el cuál», «SOCIECONOMICO», «Apcyo».
 
@@ -124,7 +126,7 @@ En las páginas de bibliografía, enviar a OCR no mejora nada. En la p58 empeora
 | Documento Técnico | 44 | firecrawl_ocr | defect → **defect** | partial | `use_new_with_corrections` | 10 | img: Contribuir a la integración de los jóvenes en procesos de acción social, política... / new: (ausente); img: educación post gradual de los jóvenes / new: educación postgradual de los jóvenes (2 veces post gradual); img: habilidades (x2) / new: habilitidades … |
 | Documento Técnico | 45 | literal_patch | defect → **minor** | yes | `use_new` | 0 | Ítem d. convertido en encabezado "##" (formato). Cifras (decreto 1780 de 2024, A01 a B18, grupos A, B o C) y literales ("y o posgrado") fiel |
 | Documento Técnico | 46 | firecrawl_ocr | defect → **defect** | partial | `use_new_with_corrections` | 14 | img: exclusión soci al y productiva / new: exclusión social al y productiva; img: deserción enlos niveles Técnico, Tecnólogo / new: deserción ellos niveles Técnico, Tecnológico; img: Cursos de formación / new: Curaos de formación … |
-| Documento Técnico | 54 | firecrawl_ocr | defect → **defect** | partial | `manual_review` | 10 | img: BPIN 2023000000000204 / new: BPIN 20230000000204 (faltan dos ceros); img: pobreza o vulnerabilidad a nivel Nacional / new: pobreza vulnerable a nivel Nacional; img: $4.1 billones COP / new: $4.1 billiones COP … |
+| Documento Técnico | 54 | firecrawl_ocr | defect → **defect** | partial | `manual_review` | 10 | img: BPIN 202300000000204 / new: BPIN 20230000000204 (falta un cero); img: pobreza o vulnerabilidad a nivel Nacional / new: pobreza vulnerable a nivel Nacional; img: $4.1 billones COP / new: $4.1 billiones COP … |
 | Documento Técnico | 57 | literal_patch | defect → **defect** | partial | `use_new_with_corrections` | 3 | img: ...inclusion-social-preguntas-respuestas-entenderlo / new: preguntasrespuestas; img: ...mercado-laboral/empleo-informal-y-seguridad-social#:~ / new: empleoinformal-y-seguridadsocial |
 | Documento Técnico | 58 | literal_patch | defect → **defect** | no | `use_new_with_corrections` | 5 | img: liderazgo-aspectos-relevantes/ (2 veces) / new: aspectosrelevantes/; img: fao.org/joint-programme-... gender-transformative-approaches/en / new: jointprogramme ... transformativeapproaches; img: entrada "DNP. (2012). Guía para la Incorporación..." 3 veces / new: 1 vez (duplicados eliminados) |
 | Documento Técnico | 59 | literal_patch | defect → **defect** | no | `use_new_with_corrections` | 3 | img: caracteristicas-y-ejemplos/ (URL en cursiva) / new: caracteristicas-yejemplos/; img: responsabilidadsocial.net/emprendimiento-que-es / new: emprendimientoque-es |
@@ -237,7 +239,7 @@ La «Conf.» es `medium` cuando la lectura es inferida o de baja resolución.
 | Documento Técnico | 46 | `Linea de expansión` | `Línea de expansión` | substantive | high |
 | Documento Técnico | 46 | `Linea compromiso` | `Línea compromiso` | substantive | high |
 | Documento Técnico | 46 | `ACTIVIDADES` | `ACTIVIDADES⏎INSUMOS` | substantive | high |
-| Documento Técnico | 54 | `BPIN 20230000000204` | `BPIN 2023000000000204` | substantive | high |
+| Documento Técnico | 54 | `BPIN 20230000000204` | `BPIN 202300000000204` | substantive | high |
 | Documento Técnico | 54 | `pobreza vulnerable a nivel` | `pobreza o vulnerabilidad a nivel` | substantive | high |
 | Documento Técnico | 54 | `billiones` | `billones` | substantive | high |
 | Documento Técnico | 54 | `Proyecto de inversion` | `Proyecto de inversión` | substantive | high |

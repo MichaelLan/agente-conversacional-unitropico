@@ -1,6 +1,16 @@
 {
  "schema": "selective-ocr-v1-audit/v1",
  "date": "2026-11-19",
+ "errata": [
+  {
+   "date": "2026-11-20",
+   "page": "02-documento-tecnico p54",
+   "field": "BPIN",
+   "was": "2023000000000204",
+   "now": "202300000000204",
+   "note": "La corrección propuesta tenía un cero de más (16 dígitos). El valor real es 202300000000204 (15 dígitos: 2023 + 8 ceros + 204), verificado sobre la imagen en la comparación ciega (reports/alt-ocr-pilot-v1-comparison.json). Firecrawl lo leyó como 20230000000204 (14 dígitos). Solo se cambió esta entrada (detalle del defecto y las dos correcciones de p54)."
+  }
+ ],
  "scope": "Lotes completos 01-res-cbu-002-2025 (16), 02-documento-tecnico (17), 03-manual-m-ip-36-1of2 (12) = 45 páginas. Lote 04 (incierto) y 05–07 (sin enviar) excluidos.",
  "inputs": {
   "manifest": "evaluations/ocr/.artifacts/selective-ocr-v1/manifest.json",
@@ -1605,7 +1615,7 @@
    "new_defects": [
     {
      "type": "number_error",
-     "detail": "img: BPIN 2023000000000204 / new: BPIN 20230000000204 (faltan dos ceros)"
+     "detail": "img: BPIN 202300000000204 / new: BPIN 20230000000204 (falta un cero)"
     },
     {
      "type": "omission",
@@ -1641,7 +1651,7 @@
    "corrections": [
     {
      "find_text": "BPIN 20230000000204",
-     "replace_text": "BPIN 2023000000000204",
+     "replace_text": "BPIN 202300000000204",
      "reason": "Número BPIN verificado con zoom.",
      "kind": "substantive",
      "literal": true,
@@ -3238,7 +3248,7 @@
    "source": "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf",
    "physical_page": 54,
    "find_text": "BPIN 20230000000204",
-   "replace_text": "BPIN 2023000000000204",
+   "replace_text": "BPIN 202300000000204",
    "reason": "Número BPIN verificado con zoom.",
    "kind": "substantive",
    "literal": true,

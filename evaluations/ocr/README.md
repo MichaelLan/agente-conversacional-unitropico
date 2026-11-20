@@ -175,6 +175,21 @@ uv run --no-project --python 3.14 python evaluations/ocr/alt_ocr.py export --pro
 Con S0 añadir `--azure-tier s0` (con F0 el script rechaza localmente fragmentos de más
 de 3 MB). `--confirm-pages` es obligatorio y debe valer exactamente 10.
 
+**Reanudar tras un 429 en el sondeo (F0)**: si una página quedó `uncertain` con una
+operación ya creada (POST 202 y `operation.json` válido), no se reenvía nada: se
+reanuda solo el `GET` de esa operación y luego se continúa con las no empezadas.
+
+```sh
+uv run --no-project --python 3.14 python evaluations/ocr/alt_ocr.py resume --provider azure
+# o una sola página: ... resume --provider azure --page 02-documento-tecnico-p20
+uv run --no-project --python 3.14 python evaluations/ocr/alt_ocr.py send --provider azure --confirm-pages 10
+uv run --no-project --python 3.14 python evaluations/ocr/alt_ocr.py status
+uv run --no-project --python 3.14 python evaluations/ocr/alt_ocr.py export --provider azure
+```
+
+(`send` salta las páginas completas y sigue negándose mientras haya una incierta sin
+reanudar. Con `AZURE_DOCINT_ENDPOINT`/`AZURE_DOCINT_KEY` exportadas, como arriba.)
+
 ### Comportamiento y garantías
 
 - **Ledger exclusivo por (proveedor, página):** `execution/<proveedor>/<page_id>/` se crea
@@ -188,6 +203,28 @@ de 3 MB). `--confirm-pages` es obligatorio y debe valer exactamente 10.
   la ruta `prebuilt-layout/analyzeResults/<id>` y `api-version=2024-11-30`; la clave
   nunca se envía a otra URL) → `GET` con `Retry-After` (2–30 s) hasta `succeeded`,
   con un tope de 300 s tras el cual la página queda **incierta**.
+- **Límites de tasa (F0: 1 TPS en analyze y en get).** Un `429`/`503` en el `GET` de
+  sondeo no crea operación ni cobra: se respeta `Retry-After` (segundos; si falta o es
+  inválido, espera 5→10→20→60 s, tope 60 s) y se sigue consultando hasta el tope global
+  de 300 s (fase `poll_throttled` en stderr); solo al agotarlo la página queda
+  **incierta**. Un `429` en el `POST` analyze **sigue siendo incierto y detiene todo**: la
+  documentación oficial dice que un 429 indica superar el TPS de "submitting analyze
+  requests (POST)" y recomienda reintentar y espaciar, pero **no documenta** que la
+  petición rechazada no se procese ni cree operación, así que no se asume "no enviado".
+- **Ritmo entre llamadas:** `--azure-tier f0` (por defecto) impone un mínimo de 3,5 s entre
+  cualquier par de peticiones (POST y GET de sondeo, ≈17/min, bajo el límite de 20/min);
+  con `s0` no hay espera extra. Ajustable con `--min-interval <segundos>`.
+- **`resume --provider azure [--page <id>]`:** para páginas `uncertain` cuyo ledger tenga
+  `operation.json` (solo se escribe tras un 202 con `Operation-Location` validado) hace
+  únicamente el sondeo de esa operación, sin POST nuevo. Reserva `resume-N.json` (fsync
+  antes del HTTP), guarda el cuerpo en `resume-N.raw` y el desenlace en
+  `resume-N-result.json`; `result.json` y `response.raw` inciertos previos no se tocan
+  (trazabilidad). Si tiene éxito la página cuenta como `complete` y `export` lee
+  `resume-N.raw`. Si falla, sigue incierta y puede reanudarse de nuevo (`resume-N+1`).
+  Sin `operation.json` válido, o si la página no está incierta, se niega sin HTTP.
+- **Retención en Azure:** el servicio guarda la entrada y los resultados de analyze **24 h
+  tras completarse la operación** y luego los borra. Hay que reanudar dentro de ese
+  plazo; pasado, el GET fallará y la página deberá decidirse a mano.
 - Observabilidad por fases a stderr (`phase=… category=… status=…`), sin texto de
   respuesta ni cabeceras.
 
@@ -228,7 +265,8 @@ de las páginas intentadas; el consumo real solo se confirma en el portal del pr
 
 - Azure Analyze Document 2024-11-30: https://learn.microsoft.com/en-us/rest/api/aiservices/document-models/analyze-document?view=rest-aiservices-v4.0%20(2024-11-30)
 - Azure Get Analyze Result: https://learn.microsoft.com/en-us/rest/api/aiservices/document-models/get-analyze-result?view=rest-aiservices-v4.0%20(2024-11-30)
-- Azure límites F0/S0: https://learn.microsoft.com/en-us/azure/ai-services/document-intelligence/service-limits?view=doc-intel-4.0.0
+- Azure límites F0/S0 y 429 (consultado 2026-11-20): https://learn.microsoft.com/en-us/azure/ai-services/document-intelligence/service-limits?view=doc-intel-4.0.0
+- Azure retención 24 h de entrada y resultados: https://learn.microsoft.com/en-us/azure/ai-foundry/responsible-ai/document-intelligence/data-privacy-security
 - Mistral endpoint OCR: https://docs.mistral.ai/api/endpoint/ocr
 - Mistral OCR (tablas, confianza): https://docs.mistral.ai/capabilities/document_ai/basic_ocr/
 
@@ -249,6 +287,154 @@ selectivo v1 (`ok`/`minor`/`defect`/`missing`; alucinaciones como criterio elimi
 hechos críticos exactos; estructura de tablas; utilidad de la confianza), siguiendo
 `docs/research/ocr-alternatives.md` §7. Solo si un proveedor cumple la regla de decisión
 se autorizan las 61 páginas restantes.
+
+## Azure v2 (69 páginas, `prebuilt-layout` F0)
+
+Segunda tanda con Azure Document Intelligence (F0, gratis; 500 págs./mes, 10 ya usadas
+en el piloto). Páginas (69, una por PDF, ninguna del piloto):
+
+- Las 61 aún sin OCR nuevo, mismas páginas físicas que los lotes 04–07 de selective-ocr-v1:
+  manual-m-ip-36 (14: 41, 47, 52, 61–65, 67, 68, 74, 75 más las 2 de abajo), res-00137 (12:
+  1–5, 9, 11, 13, 14, 17–19), convocatoria-2026-1 (17: 1–17) y politica-bienestar (20: 1–4,
+  7–18, 20, 22–24).
+- 8 de los lotes 01–03 con gráficos/diagramas con cifras: documento-tecnico p17, p21, p30,
+  p32, p44, p46 y manual-m-ip-36 p27, p29. La auditoría selective-ocr-v1 solo marcó tres
+  `manual_review` (01 p3, 02 p16, 02 p54) y las tres ya están en el piloto.
+
+Desglose: documento-tecnico 6, manual-m-ip-36 14 (12 del lote 04 + p27, p29), res-00137 12,
+convocatoria-2026-1 17, politica-bienestar 20.
+
+**Preparación (ya ejecutada, offline):** `prepare_alt_v2.py` (mismo método que
+`prepare_alt_pilot.py`: Poppler local sin red, texto, render y geometría verificados por
+página). Salida exclusiva `.artifacts/alt-ocr-v2/` (**no regenerar**). `pdfseparate`
+arrastra los objetos compartidos del escaneo (19,6 MB por página de Res. 00137, 7,7 MB por
+la Convocatoria; F0 admite 4 MB), así que esas 29 páginas se cortaron con `pdftocairo -pdf`
+(conserva el JPEG de la página sin recomprimir) y además se comprobó que el render a
+100 dpi coincide con el original (`method` y `render_100dpi_sha256` en el manifiesto).
+Mayor fragmento: 1,1 MB. Manifiesto: `.artifacts/alt-ocr-v2/manifest.json`, sha256
+`dcf7c7ad69976185f908349a782c52b76e4c2a2f7ded5fee04afd2f340503685`, fijado en
+`alt_ocr_v2.py` junto con el pin de cada fragmento.
+
+**Código:** `alt_ocr_v2.py` reutiliza el núcleo de `alt_ocr.py` (`send`/`resume`/`status`
+reciben el cargador de manifiesto, el sha y el total; el piloto v1 no cambia). Mismas
+guardas: endpoint validado, ledger exclusivo `execution/azure/<page_id>/` con `attempt.json`
+fsync antes del HTTP, sin replay, `resume` solo de sondeo, ritmo F0 de 3,5 s, 429 en el
+sondeo con `Retry-After`. `--confirm-pages` debe valer exactamente **69**.
+
+**Comando** (desde la raíz del repo, con `AZURE_DOCINT_ENDPOINT` y `AZURE_DOCINT_KEY` en el
+entorno; opcionalmente `ENV_FILE=<ruta>`). El lanzador ejecuta `send` → `status` → `export`,
+registra en `.artifacts/alt-ocr-v2/run.log` y se detiene (tras `status`) si `send` no termina
+con 0; no imprime credenciales:
+
+```sh
+bash evaluations/ocr/.artifacts/alt-ocr-v2/run.sh
+# equivalente manual:
+uv run --no-project --python 3.14 python evaluations/ocr/alt_ocr_v2.py check
+uv run --no-project --python 3.14 python evaluations/ocr/alt_ocr_v2.py send --confirm-pages 69
+uv run --no-project --python 3.14 python evaluations/ocr/alt_ocr_v2.py resume   # solo si hay una página incierta
+uv run --no-project --python 3.14 python evaluations/ocr/alt_ocr_v2.py status
+uv run --no-project --python 3.14 python evaluations/ocr/alt_ocr_v2.py export
+```
+
+**Salida (`export`, offline, exige las 69 páginas completas):**
+`.artifacts/alt-ocr-v2/export/<documento>.json` (forma Firecrawl Parse v2 aceptada por
+`parse_ocr_response`, `source: azure_layout_v1`) y `pages.json` (`alt-ocr-v2-export/v1`).
+Cada página lleva su confianza (media, mínima, % de palabras < 0,8 y < 0,9), la bandera
+`needs_full_review` y `low_confidence_words` (palabras < 0,9: texto, confianza y offset en
+el Markdown de la página, sin contexto).
+
+**Regla de revisión:** `needs_full_review` = confianza media < 0,93 **o** más del 10 % de
+palabras con confianza < 0,8 (regla del informe de comparación del piloto). Esas páginas se
+revisan completas contra la imagen; en el resto basta revisar las palabras de
+`low_confidence_words` (la confianza no detecta todo: en el piloto Azure leyó mal el símbolo %
+en p22, así que las cifras críticas se contrastan con la imagen).
+
+## Caché final y semillas
+
+Ensambla la caché OCR final del corpus (7 PDF, 216 páginas) según
+`reports/alt-ocr-v2-audit.json` → `final_source_plan` y prepara las correcciones y la
+sustitución de página para registrarlas por la API admin. Offline: sin red, sin llamadas de
+pago, sin `.env`, sin subir nada.
+
+```sh
+cd evaluations/ocr
+uv run python assemble_final_cache.py --check   # valida, no escribe
+uv run python assemble_final_cache.py           # escribe (exclusivo: falla si existe la salida)
+```
+
+- `final_sources.py`: carga el plan y, por página física, el markdown de su fuente
+  (`reusable_pdftotext`/`reusable_firecrawl_prev` de extraction-corpus-v2, Firecrawl lotes
+  01–03 de selective-ocr-v1, Azure piloto y Azure v2), con SHA de cada artefacto; reúne las
+  120 correcciones obligatorias (61 de alt-ocr-v2, 55 sustantivas de selective-ocr-v1 en
+  páginas cuya fuente final es Firecrawl —el BPIN de DT p54 no entra: esa página usa Azure
+  piloto, que lo lee bien—, 4 del piloto); 59 páginas. Las cosméticas/editoriales no entran.
+- `final_corrections.py`: valida con el código REAL de la ingesta (importado de
+  `workers/ingestion/src` con `sys.path` explícito): `parse_ocr_response` →
+  `StructuralChunker().prepare` → `count_matches`/`apply_corrections` → `chunk_prepared`.
+  Las correcciones que aparecen exactamente una vez en la página preparada se registran tal
+  cual; las demás (fragmentos HTML de tablas que la preparación convierte a filas Markdown,
+  cabeceras repetidas eliminadas) se reformulan a partir del diff entre el texto preparado y
+  el esperado (raw con la corrección aplicada, luego preparado), en ediciones literales
+  únicas y dentro de los límites de la API (find ≤ 500, replace ≤ 500); las que no tienen
+  efecto visible se registran como `omitted`. Excepción documentada (`RAW_ADJUSTMENTS`): el
+  renderizador de tablas de la ingesta descarta `<caption>`, así que los títulos corregidos de
+  M-IP-36 p47 y p67 se insertan como línea de texto sobre su tabla (revisar si
+  `services/tables.py` empieza a renderizar captions).
+- `final_override.py`: sustitución COMPLETA propuesta de DT p54 (contrato 4c): texto
+  preparado de la página con el bloque del diagrama de Insumos sustituido por una
+  transcripción hecha sobre la imagen; integra la corrección del piloto «argo plaza».
+- `seed_admin.py` (stdlib): registra semillas por la API admin. `render_page.py`: PNG de una
+  página del original (PyMuPDF vía `uvx`, fuera de las dependencias del proyecto).
+
+Salida:
+- `.artifacts/ingestion-cache-v2/ocr/{sha256}/firecrawl-parse-v2-ocr-v1-p1000.json` (forma
+  Firecrawl Parse v2, misma clave que `ocr_key()` con los valores por defecto de
+  `settings.py`/`wrangler.jsonc`; markdown SIN correcciones, `source` por página,
+  `data.provenance` con fuente, artefacto y SHA), `upload-plan.md` (comandos NO ejecutados) y
+  `assembly.json`.
+- `.artifacts/corrections-seed-v1/corrections.json` (por documento: nombre de archivo,
+  sha256 del PDF, `seq`, página, `find_text`, `replace_text`, `reason`, origen, estado
+  `verbatim`/`reformulated` y `reformulated_from`; lista `omitted`), `page_overrides.json`
+  (DT p54, `requires_human_verification: true`) y `validation.json` (resultado por corrección
+  y chunks por documento).
+
+### Orden de operaciones tras desplegar
+
+1. **Precargar la caché en R2**: ejecutar los comandos de
+   `.artifacts/ingestion-cache-v2/upload-plan.md` desde la raíz del repositorio. Sin ella,
+   la ingesta pagaría un OCR completo.
+2. **Subir los 7 PDF por el panel** (los mismos bytes: la caché es por SHA-256).
+3. **Esperar `review_required`** en cada versión (el paso `ocr` reutiliza la caché).
+4. **Verificar la transcripción de DT p54** (abajo) y registrar las semillas:
+   ```sh
+   export ADMIN_TOKEN=...   # o --env-file con una línea ADMIN_TOKEN=...
+   uv run python seed_admin.py --base-url https://<api>                        # dry-run (solo GET)
+   uv run python seed_admin.py --base-url https://<api> --apply --override-verified
+   # sin aceptar la transcripción: --apply --no-overrides (registra «argo plaza» como corrección)
+   ```
+   Resuelve cada versión por el sha256 del PDF en `GET /admin/documents`; es idempotente
+   (salta correcciones activas iguales; `409 duplicate_correction` = ya registrada), pausa
+   entre peticiones (`--pause`, 1 s), se detiene ante cualquier respuesta inesperada y anota
+   cada alta en `.artifacts/corrections-seed-v1/ledger.jsonl` (sin token ni texto).
+5. **Reprocesar** cada versión desde el panel: aplica sustitución y correcciones sin volver a
+   pagar OCR. Si alguna falla con `correction_not_applicable`, ver `error_detail`.
+6. **Revisar** los chunks y la página 54 de DT (`GET /admin/versions/{id}/pages?page=54`).
+7. **Publicar**.
+
+### Qué debe verificar el usuario
+
+- **DT p54** (`page_overrides.json`): comparar el bloque «Insumos» (Normatividad,
+  Presupuesto, Recursos, Documentos, Institucional) con el PNG de la página. Generarlo con:
+  ```sh
+  uvx --with pymupdf python -I evaluations/ocr/render_page.py \
+    "documents/documentos_bienestar/DOCUMENTO TECNICO RENTA JOVEN.pdf" 54 \
+    46af91fb3a4efc942070444631141442e0343b75ff5584c5a77f9598f302fc0a <directorio-temporal>
+  ```
+  Los rótulos del flujo superior («Actividades», «Resultados de corto plazo», «Resultados de
+  mediano y largo plazo») tienen muy bajo contraste en el original: lectura propuesta.
+- Las correcciones `reformulated` (tablas reestructuradas) y las 4 `omitted` (fecha
+  «2 5 ENE 2024» en cabeceras repetidas de Res. 00137 p4, p5, p9 y p14, que la preparación
+  ya elimina) en `corrections.json`.
 
 ## Herramientas de calidad
 
