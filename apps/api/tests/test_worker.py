@@ -116,7 +116,7 @@ def test_local_worker_configuration() -> None:
             {
                 "binding": "DB",
                 "database_name": "unitropico",
-                "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+                "database_id": "af5162b0-ce3d-4669-97dc-a82dad02c4d8",
                 "migrations_dir": "../../infra/d1/migrations",
             }
         ],

@@ -64,3 +64,6 @@ coverage/
 *.tmp
 *.temp
 *~
+
+# Secretos locales del operador (nunca versionar).
+/.secrets/
