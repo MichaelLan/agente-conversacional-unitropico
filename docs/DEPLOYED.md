@@ -2,13 +2,13 @@
 
 Desplegado el 2026-11-20 siguiendo `docs/DEPLOYMENT.md`. Cuenta con plan Workers Paid.
 
-URL pública (única): https://unitropico-web.michaellan-eng.workers.dev (`/` chat, `/admin/` panel).
+URL pública principal: https://unitropico.michaellan.dev (`/` chat, `/admin/` panel), Custom Domain del Worker `unitropico-web` (ruta `custom_domain: true` en `apps/web/wrangler.jsonc`; zona `michaellan.dev` en la misma cuenta; DNS y certificado creados por Cloudflare; verificado 2026-11-20: `/`, `/admin/`, `/api/health`, manifest y `sw.js` 200, `POST /api/chat` sin cuerpo válido 422). URL de respaldo, sigue activa: https://unitropico-web.michaellan-eng.workers.dev.
 
 ## Recursos
 - D1 `unitropico`: `af5162b0-ce3d-4669-97dc-a82dad02c4d8` (ENAM). Migración `0001_initial.sql` aplicada en remoto.
 - R2 `unitropico-documents` (Standard, ENAM). Caché OCR v2: 7 objetos `ocr/{sha256}/firecrawl-parse-v2-ocr-v1-p1000.json` (verificados byte a byte con `evaluations/ocr/.artifacts/ingestion-cache-v2/`), más los 7 PDF subidos (`raw/{sha256}.pdf`) y los artefactos que persiste la ingesta (embeddings).
 - Vectorize `unitropico-chunks-1536` (1536, cosine, 436 vectores tras la carga del corpus) con índices de metadatos `version_id` y `document_id` (string).
-- Workers: `unitropico-ingestion` (Workflow `ingestion`), `unitropico-rag`, `unitropico-api`: sin `workers.dev` ni rutas (404 en sus subdominios). `unitropico-web`: `workers_dev: true`, binding `API`.
+- Workers: `unitropico-ingestion` (Workflow `ingestion`), `unitropico-rag`, `unitropico-api`: sin `workers.dev` ni rutas (404 en sus subdominios). `unitropico-web`: Custom Domain `unitropico.michaellan.dev` + `workers_dev: true`, binding `API`.
 - Secrets en `unitropico-api`: `ADMIN_TOKEN`, `RATE_LIMIT_SALT` (generados con CSPRNG). `AI_GATEWAY_API_KEY` configurado en `unitropico-rag` y `unitropico-ingestion` (embeddings verificados en la carga; respuestas del chat aún sin probar).
 
 ## ADMIN_TOKEN

@@ -4,7 +4,9 @@
   "name": "unitropico-web",
   "main": "worker/index.js",
   "compatibility_date": "2026-11-08",
-  // Acceso público por workers.dev hasta que haya dominio propio (routes).
+  // Custom Domain (zona michaellan.dev en la misma cuenta; Cloudflare crea el DNS y el certificado).
+  // workers.dev sigue activo como URL de respaldo.
+  "routes": [{ "pattern": "unitropico.michaellan.dev", "custom_domain": true }],
   "workers_dev": true,
   "preview_urls": false,
   "assets": {

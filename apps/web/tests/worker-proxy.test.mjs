@@ -160,4 +160,6 @@ test('wrangler config serves dist/ and runs the Worker first only for /api/*', a
   assert.equal(config.assets.directory, './dist')
   assert.deepEqual(config.assets.run_worker_first, ['/api/*'])
   assert.deepEqual(config.services.map(s => s.binding), ['API'])
+  assert.deepEqual(config.routes, [{ pattern: 'unitropico.michaellan.dev', custom_domain: true }])
+  assert.equal(config.workers_dev, true)
 })
