@@ -36,12 +36,23 @@ test('accepts valid answered, abstained and unavailable bodies', () => {
   assert.deepEqual(parseChatResponse(502, unavailable), unavailable)
 })
 
+test('abstained tolerates unknown, null or missing reason (normalized to null)', () => {
+  assert.equal(parseChatResponse(200, { ...abstained, reason: 'future_reason' }).reason, null)
+  assert.equal(parseChatResponse(200, { ...abstained, reason: null }).reason, null)
+  const withoutReason = { ...abstained }
+  delete withoutReason.reason
+  assert.deepEqual(parseChatResponse(200, withoutReason), { ...abstained, reason: null })
+  const answeredWithoutReason = { ...answered }
+  delete answeredWithoutReason.reason
+  assert.equal(parseChatResponse(200, answeredWithoutReason), null)
+})
+
 test('rejects broken answered/abstained invariants', () => {
   const broken = [
     { ...answered, answer: null }, { ...answered, answer: '  ' }, { ...answered, citations: [] },
     { ...answered, reason: 'no_evidence' }, { ...answered, referral: 3 },
     { ...abstained, answer: 'algo' }, { ...abstained, citations: [citation] },
-    { ...abstained, reason: null }, { ...abstained, reason: 'otra' },
+    { ...abstained, reason: 3 }, { ...abstained, reason: ['no_evidence'] },
     { ...abstained, referral: null }, { ...abstained, referral: ' ' },
     { ...answered, status: 'unavailable' }, { ...answered, extra: true },
     ...[{ page_start: 0 }, { page_end: 12 }, { page_start: 1.5 }, { page_end: '14' },

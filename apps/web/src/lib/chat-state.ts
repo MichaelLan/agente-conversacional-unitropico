@@ -1,4 +1,5 @@
 import type {
+  AbstainReason,
   AssistantMessage,
   ChatHistoryItem,
   ChatMessage,
@@ -17,6 +18,46 @@ export const QUESTION_COUNTER_FROM = 400
 /** Texto que representa una abstención en el historial enviado al backend. */
 export const ABSTENTION_HISTORY_TEXT =
   'No encontré información suficiente en los documentos institucionales para responder.'
+
+/** Texto genérico de abstención (sin evidencia, abstención del modelo o motivo desconocido). */
+export const ABSTENTION_GENERIC_TEXT =
+  'No encontré información suficiente en los documentos institucionales para responder esta pregunta. '
+  + 'Intenta reformularla con más detalle, por ejemplo indicando el programa o la convocatoria.'
+
+/** Hubo información relacionada, pero la respuesta no superó la verificación de citas. */
+export const ABSTENTION_UNVERIFIED_TEXT =
+  'Encontré información relacionada, pero no pude verificar la respuesta con citas exactas de los documentos. '
+  + 'Intenta reformular la pregunta o hacerla más específica.'
+
+/** Las fuentes citadas cambiaron durante la respuesta. */
+export const ABSTENTION_STALE_TEXT =
+  'Los documentos consultados se actualizaron mientras respondía. Vuelve a enviar la pregunta.'
+
+/** Texto visible de una abstención según su motivo; `null` o desconocido → genérico. */
+export function abstentionText(reason: AbstainReason | null): string {
+  switch (reason) {
+    case 'invalid_citation':
+    case 'invalid_output':
+      return ABSTENTION_UNVERIFIED_TEXT
+    case 'stale_source':
+      return ABSTENTION_STALE_TEXT
+    default:
+      return ABSTENTION_GENERIC_TEXT
+  }
+}
+
+/** Anuncio breve (aria-live) de una abstención según su motivo. */
+export function abstentionAnnouncement(reason: AbstainReason | null): string {
+  switch (reason) {
+    case 'invalid_citation':
+    case 'invalid_output':
+      return 'El asistente no pudo verificar la respuesta con citas.'
+    case 'stale_source':
+      return 'Las fuentes cambiaron; vuelve a enviar la pregunta.'
+    default:
+      return 'El asistente no encontró información suficiente.'
+  }
+}
 
 /** Cuenta code points (no unidades UTF-16), como el backend. */
 export function countChars(text: string): number {
@@ -71,7 +112,9 @@ export function resultToMessage(id: string, result: ChatResult): AssistantMessag
         citations: result.citations, referral: result.referral,
       }
     case 'abstained':
-      return { id, role: 'assistant', kind: 'abstention', referral: result.referral }
+      return {
+        id, role: 'assistant', kind: 'abstention', reason: result.reason, referral: result.referral,
+      }
     case 'unavailable':
       return { id, role: 'assistant', kind: 'unavailable', referral: result.referral }
   }
@@ -143,7 +186,7 @@ export function announcement(state: ChatState): string {
   if (last?.role !== 'assistant') return ''
   switch (last.kind) {
     case 'answer': return 'El asistente respondió.'
-    case 'abstention': return 'El asistente no encontró información suficiente.'
+    case 'abstention': return abstentionAnnouncement(last.reason)
     case 'unavailable': return 'El asistente no está disponible en este momento.'
     case 'error': return 'No se pudo completar la consulta.'
     case 'cancelled': return 'Consulta cancelada.'

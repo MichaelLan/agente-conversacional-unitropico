@@ -44,6 +44,7 @@ test('send → abstained renders the referral; invalid input is ignored', async 
   await chat.send('algo')
   assert.equal(chat.messages.value.at(-1).kind, 'abstention')
   assert.equal(chat.messages.value.at(-1).referral, 'Acude a Bienestar.')
+  assert.equal(chat.messages.value.at(-1).reason, 'no_evidence')
   assert.equal(chat.retryableId.value, null)
 })
 

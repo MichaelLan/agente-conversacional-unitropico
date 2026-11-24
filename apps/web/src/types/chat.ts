@@ -45,7 +45,8 @@ export interface AnsweredResponse {
 export interface AbstainedResponse {
   status: 'abstained'
   answer: null
-  reason: AbstainReason
+  /** `null` si el backend omite el motivo o envía uno desconocido (compatibilidad futura). */
+  reason: AbstainReason | null
   citations: []
   referral: string
 }
@@ -80,6 +81,7 @@ export interface AbstentionMessage {
   id: string
   role: 'assistant'
   kind: 'abstention'
+  reason: AbstainReason | null
   referral: string
 }
 

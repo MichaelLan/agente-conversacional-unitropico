@@ -6,7 +6,8 @@ const [state, { formatPages, citationDetails }] = await loadSrc('lib/chat-state'
 const {
   buildHistory, normalizeQuestion, countChars, initialChatState, startTurn, resolveTurn,
   failTurn, cancelTurn, startRetry, retryableMessageId, resultToMessage, announcement,
-  ABSTENTION_HISTORY_TEXT,
+  ABSTENTION_HISTORY_TEXT, abstentionText, ABSTENTION_GENERIC_TEXT, ABSTENTION_UNVERIFIED_TEXT,
+  ABSTENTION_STALE_TEXT,
 } = state
 
 const user = (id, text) => ({ id, role: 'user', text })
@@ -36,7 +37,7 @@ test('history keeps only completed turns, last 6 messages, trimmed to 2000', () 
   const mixed = buildHistory([
     user('u1', 'falló'), { id: 'e', role: 'assistant', kind: 'error', text: 'x' },
     user('u2', 'cancelada'), { id: 'c', role: 'assistant', kind: 'cancelled' },
-    user('u3', 'sin datos'), { id: 'b', role: 'assistant', kind: 'abstention', referral: 'derivación' },
+    user('u3', 'sin datos'), { id: 'b', role: 'assistant', kind: 'abstention', reason: 'invalid_citation', referral: 'derivación' },
     user('u4', 'caída'), { id: 'n', role: 'assistant', kind: 'unavailable', referral: 'r' },
     user('u5', 'en curso'),
   ])
@@ -63,8 +64,33 @@ test('send → abstained is a normal (non-retryable) reply carrying the referral
   let s = startTurn(initialChatState(), 'u1', 'algo')
   s = resolveTurn(s, 'a1', { status: 'abstained', answer: null, reason: 'no_evidence', citations: [], referral: 'Acude a Bienestar.' })
   assert.equal(s.status, 'ready')
-  assert.deepEqual(s.messages.at(-1), { id: 'a1', role: 'assistant', kind: 'abstention', referral: 'Acude a Bienestar.' })
+  assert.deepEqual(s.messages.at(-1), { id: 'a1', role: 'assistant', kind: 'abstention', reason: 'no_evidence', referral: 'Acude a Bienestar.' })
   assert.equal(retryableMessageId(s), null)
+})
+
+test('abstention keeps its reason and maps it to differentiated copy', () => {
+  for (const reason of ['invalid_citation', 'stale_source', null]) {
+    const message = resultToMessage('a', { status: 'abstained', answer: null, reason, citations: [], referral: 'r' })
+    assert.equal(message.reason, reason)
+  }
+  assert.equal(abstentionText('no_evidence'), ABSTENTION_GENERIC_TEXT)
+  assert.equal(abstentionText('model_abstained'), ABSTENTION_GENERIC_TEXT)
+  assert.equal(abstentionText(null), ABSTENTION_GENERIC_TEXT)
+  assert.equal(abstentionText('otra'), ABSTENTION_GENERIC_TEXT)
+  assert.equal(abstentionText('invalid_citation'), ABSTENTION_UNVERIFIED_TEXT)
+  assert.equal(abstentionText('invalid_output'), ABSTENTION_UNVERIFIED_TEXT)
+  assert.equal(abstentionText('stale_source'), ABSTENTION_STALE_TEXT)
+  assert.match(ABSTENTION_GENERIC_TEXT, /^No encontré información suficiente/)
+  assert.match(ABSTENTION_UNVERIFIED_TEXT, /^Encontré información relacionada/)
+  assert.match(ABSTENTION_STALE_TEXT, /se actualizaron/)
+  const announce = reason => announcement(resolveTurn(startTurn(initialChatState(), 'u', 'q'), 'a',
+    { status: 'abstained', answer: null, reason, citations: [], referral: 'r' }))
+  assert.equal(announce('no_evidence'), 'El asistente no encontró información suficiente.')
+  assert.equal(announce(null), 'El asistente no encontró información suficiente.')
+  assert.equal(announce('model_abstained'), 'El asistente no encontró información suficiente.')
+  assert.equal(announce('invalid_citation'), 'El asistente no pudo verificar la respuesta con citas.')
+  assert.equal(announce('invalid_output'), 'El asistente no pudo verificar la respuesta con citas.')
+  assert.equal(announce('stale_source'), 'Las fuentes cambiaron; vuelve a enviar la pregunta.')
 })
 
 test('unavailable / error / cancel allow retry of the same question without duplicating it', () => {

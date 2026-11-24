@@ -44,6 +44,8 @@ test('assistant text is interpolated (escaped) with pre-line, citations shown', 
   assert.match(source, /whitespace-pre-line/)
   assert.match(source, /<CitationList/)
   assert.match(source, /Reintentar/)
+  assert.match(source, /:title="abstentionText\(message\.reason\)"/)
+  assert.match(source, /:description="message\.referral"/)
   const citations = await read(join(srcRoot, 'components/CitationList.vue'))
   assert.match(citations, /UCollapsible/)
 })

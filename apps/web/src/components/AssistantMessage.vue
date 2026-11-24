@@ -2,6 +2,7 @@
 import UAlert from '@nuxt/ui/components/Alert.vue'
 import UButton from '@nuxt/ui/components/Button.vue'
 import CitationList from './CitationList.vue'
+import { abstentionText } from '../lib/chat-state'
 import type { AssistantMessage } from '../types/chat'
 
 defineProps<{
@@ -37,7 +38,7 @@ const emit = defineEmits<{ retry: [] }>()
     color="neutral"
     variant="subtle"
     icon="i-lucide-search-x"
-    title="No encontré información suficiente en los documentos institucionales para responder esta pregunta."
+    :title="abstentionText(message.reason)"
     :ui="{ description: 'whitespace-pre-line' }"
     :description="message.referral"
   />

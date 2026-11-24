@@ -56,6 +56,14 @@ const isReason = (value: unknown): value is AbstainReason =>
   typeof value === 'string' && (ABSTAIN_REASONS as readonly string[]).includes(value)
 
 const RESULT_KEYS = ['status', 'answer', 'reason', 'citations', 'referral'] as const
+const RESULT_KEYS_WITHOUT_REASON = ['status', 'answer', 'citations', 'referral'] as const
+
+/**
+ * Motivo de abstención tolerante: un motivo conocido se conserva; uno ausente,
+ * nulo o desconocido (texto) se normaliza a `null` y la UI usa el texto genérico.
+ */
+const abstainReason = (value: unknown): AbstainReason | null | undefined =>
+  isReason(value) ? value : value === undefined || value === null || typeof value === 'string' ? null : undefined
 
 /**
  * Valida estrictamente el cuerpo según el status HTTP (contrato v1).
@@ -69,7 +77,9 @@ export function parseChatResponse(status: number, body: unknown): ChatResult | n
       ? { status: 'unavailable', referral: body.referral }
       : null
   }
-  if (status !== 200 || !hasExactKeys(body, RESULT_KEYS) || !Array.isArray(body.citations)) {
+  const keysOk = hasExactKeys(body, RESULT_KEYS)
+    || (body.status === 'abstained' && hasExactKeys(body, RESULT_KEYS_WITHOUT_REASON))
+  if (status !== 200 || !keysOk || !Array.isArray(body.citations)) {
     return null
   }
   const { answer, reason, citations, referral } = body
@@ -80,8 +90,9 @@ export function parseChatResponse(status: number, body: unknown): ChatResult | n
       : null
   }
   if (body.status === 'abstained') {
-    return answer === null && citations.length === 0 && isReason(reason) && nonblank(referral)
-      ? { status: 'abstained', answer: null, reason, citations: [], referral }
+    const normalized = abstainReason(reason)
+    return answer === null && citations.length === 0 && normalized !== undefined && nonblank(referral)
+      ? { status: 'abstained', answer: null, reason: normalized, citations: [], referral }
       : null
   }
   return null
