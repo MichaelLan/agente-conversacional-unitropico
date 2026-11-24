@@ -46,7 +46,12 @@ def test_chat_answered_with_citations_from_d1():
     ]
     assert [c[0] for c in binding.calls] == ["https://rag.internal/answer"]
     prompt = json.loads(json.loads(fetch.calls[0][1]["body"])["messages"][1]["content"])
-    assert [s["chunk_id"] for s in prompt["fuentes"]] == ["chunk-beca"]
+    # Exact FTS hit first; the transport chunk shares no question term and is
+    # only backfilled through the synonym expansion beca -> apoyo.
+    assert [s["chunk_id"] for s in prompt["fuentes"]] == [
+        "chunk-beca",
+        "chunk-transporte",
+    ]
     assert prompt["fuentes"][0]["texto"] == BECA_TEXT
 
 

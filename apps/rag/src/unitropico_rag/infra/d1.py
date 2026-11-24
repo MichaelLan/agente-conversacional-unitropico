@@ -5,6 +5,7 @@ The SQL is copied verbatim from ``infra/d1/queries.sql`` (blocks
 ``tests/test_d1.py`` fails if the copies drift.
 """
 
+import asyncio
 import json
 from collections.abc import Mapping, Sequence
 from datetime import date
@@ -13,6 +14,7 @@ from typing import Protocol
 
 from unitropico_rag.domain.evidence import ChunkCandidate, RankedChunk, RegistryEntry
 from unitropico_rag.infra.fts_query import build_fts5_query
+from unitropico_rag.infra.fts_synonyms import WELFARE_SYNONYMS, expand_fts5_query
 
 # Keep batches within the documented json_each bound (queries.md §2.1).
 MAX_BATCH_IDS = 100
@@ -165,21 +167,50 @@ def chunk_candidate(row: Mapping[str, object]) -> ChunkCandidate:
 
 
 class D1LexicalRetriever:
-    """Rank published chunks by FTS5 bm25 (lower is better)."""
+    """Rank published chunks by FTS5 bm25 (lower is better).
 
-    def __init__(self, db: D1Database, *, max_terms: int = 16):
-        """Receive the D1 binding and the FTS term cap."""
+    Synonyms (``fts_synonyms``; ``synonyms=None`` disables them) only
+    *backfill*: FTS5 cannot weight single query terms, so a chunk matching a
+    rare synonym could outrank one matching the student's own word. When the
+    expansion adds terms, two bound queries run concurrently — the reference
+    query and the expanded one — and the result is the reference hits first,
+    then expanded-only hits in their own bm25 order, up to ``limit``. Scores
+    keep each query's native bm25 (trace only; fusion uses ranks).
+    """
+
+    def __init__(
+        self,
+        db: D1Database,
+        *,
+        max_terms: int = 16,
+        synonyms: Mapping[str, tuple[str, ...]] | None = WELFARE_SYNONYMS,
+    ):
+        """Receive the D1 binding, the FTS term cap and the synonym table."""
         if type(max_terms) is not int or max_terms < 1:
             raise ValueError("max_terms must be a positive integer")
-        self._db, self._max_terms = db, max_terms
+        self._db, self._max_terms, self._synonyms = db, max_terms, synonyms
 
     async def search(self, question: str, limit: int) -> list[RankedChunk]:
         """Return up to ``limit`` hits; an unsearchable question returns []."""
         if type(limit) is not int or limit < 1:
             raise ValueError("limit must be a positive integer")
-        expression = build_fts5_query(question, max_terms=self._max_terms)
-        if expression is None:
+        base = build_fts5_query(question, max_terms=self._max_terms)
+        if base is None:
             return []
+        expanded = expand_fts5_query(
+            question, max_terms=self._max_terms, synonyms=self._synonyms
+        )
+        if expanded is None or expanded == base:
+            return await self._match(base, limit)
+        exact, broad = await asyncio.gather(
+            self._match(base, limit), self._match(expanded, limit)
+        )
+        seen = {hit.chunk_id for hit in exact}
+        backfill = [hit for hit in broad if hit.chunk_id not in seen]
+        return (exact + backfill)[:limit]
+
+    async def _match(self, expression: str, limit: int) -> list[RankedChunk]:
+        """Run one bound MATCH query and validate the rows."""
         rows = await query_rows(self._db, SEARCH_CHUNKS_SQL, expression, limit)
         hits = []
         for row in rows:

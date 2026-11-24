@@ -50,7 +50,7 @@ def test_sql_matches_canonical_queries(name, copy):
 
 def test_lexical_ranks_published_chunks_only():
     """FTS hits exclude drafts; accent-insensitive; ranked by bm25 ascending."""
-    retriever = D1LexicalRetriever(seeded())
+    retriever = D1LexicalRetriever(seeded(), synonyms=None)
     hits = run(retriever.search("¿Hasta cuándo es la inscripcion a la beca?", 10))
     assert [hit.chunk_id for hit in hits] == ["chunk-beca"]
     assert isinstance(hits[0], RankedChunk) and hits[0].score < 0
@@ -70,7 +70,32 @@ def test_lexical_unsearchable_question_skips_query():
 def test_lexical_operator_injection_is_inert():
     """FTS operators in the question are plain terms, not syntax."""
     hits = run(D1LexicalRetriever(seeded()).search('beca" OR NEAR(x*) -- ;', 5))
-    assert [hit.chunk_id for hit in hits] == ["chunk-beca"]
+    # "beca" also expands to "apoyo" (transport chunk), backfilled after.
+    assert [hit.chunk_id for hit in hits] == ["chunk-beca", "chunk-transporte"]
+    exact = D1LexicalRetriever(seeded(), synonyms=None)
+    assert [h.chunk_id for h in run(exact.search('beca" OR NEAR(x*) -- ;', 5))] == [
+        "chunk-beca"
+    ]
+
+
+def test_lexical_synonyms_backfill_after_exact_hits():
+    """Synonym-only hits come after exact hits; both queries are bound."""
+    db = seeded()
+    hits = run(D1LexicalRetriever(db).search("¿Qué becas o beca hay?", 10))
+    assert [hit.chunk_id for hit in hits] == ["chunk-beca", "chunk-transporte"]
+    assert len(db.calls) == 2
+    assert all(sql == SEARCH_CHUNKS_SQL for sql, _ in db.calls)
+    assert '"apoyo"' not in db.calls[0][1][0] and '"apoyo"' in db.calls[1][1][0]
+    assert [h.chunk_id for h in run(D1LexicalRetriever(db).search("beca", 1))] == [
+        "chunk-beca"
+    ]
+
+
+def test_lexical_without_expansion_runs_one_query():
+    """No synonym trigger: a single reference query."""
+    db = seeded()
+    run(D1LexicalRetriever(db).search("transporte", 10))
+    assert len(db.calls) == 1
 
 
 def test_lexical_hides_formally_superseded_version():

@@ -129,7 +129,11 @@ def test_answered_with_catalog_metadata_from_d1():
         (1536, {"topK": 50, "returnValues": False, "returnMetadata": "none"})
     ]
     prompt = json.loads(transport.calls[1][1]["messages"][1]["content"])
-    assert [source["chunk_id"] for source in prompt["fuentes"]] == ["chunk-beca"]
+    # "beca" expands to "apoyo" in FTS, so the transport chunk follows.
+    assert [source["chunk_id"] for source in prompt["fuentes"]] == [
+        "chunk-beca",
+        "chunk-transporte",
+    ]
     assert prompt["fuentes"][0]["texto"] == BECA_TEXT
     assert prompt["fuentes"][0]["vigente_hasta"] == "2026-06-30"
 
