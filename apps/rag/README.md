@@ -45,14 +45,23 @@ se valida contra el chunk. Los motivos de abstención significan:
 - `no_evidence`: la recuperación funcionó pero no quedó evidencia admisible, **o** la mejor similitud semántica quedó por debajo de `MIN_RELEVANCE` si está activado (`below_threshold=true` en `answer_metrics`). No se llama al LLM.
 - `model_abstained`: el modelo devolvió una abstención bien formada.
 - `invalid_output`: JSON inválido, claves duplicadas o extra, `answered` sin texto o sin citas, abstención con contenido.
-- `invalid_citation`: `chunk_id` desconocido o repetido, o `quote` no literal o demasiado corta.
+- `invalid_citation`: **ninguna** cita es válida. Las citas inválidas (`chunk_id` desconocido o repetido, `quote` no literal o demasiado corta) se **descartan** y la respuesta se devuelve con las restantes; solo si no queda ninguna se abstiene. `answer_metrics` registra `dropped_citations=<n>`.
 - `stale_source`: el catálogo cambió durante la generación (despublicado, revisión, hash, páginas…).
 
-**Validación de quote:** se colapsan las secuencias de espacios en blanco Unicode
-en ambos lados y se exige que la quote sea subcadena del chunk, con **al menos
-12 caracteres no blancos** (así no pasan “de” o “2026”, y sí “30 de junio de 2026”).
-No se normaliza Unicode (NFC/NFD): una tilde descompuesta no coincide. La cita
-devuelta lleva la quote ya normalizada.
+**Validación de quote** (`services/quotes.py`, `match_quote`): quote y chunk
+se pliegan igual, carácter a carácter: NFKD + `casefold`, sin tildes (el OCR las
+pierde y el modelo las restaura; como en FTS5, `ñ` ≈ `n`), comillas tipográficas
+→ rectas, guiones/rayas/menos → `-`, se eliminan guion blando, espacios de ancho
+cero, BOM y marcas Markdown `*` y `` ` ``, la barra `|` de tablas cuenta como
+espacio y los espacios se colapsan. A la quote se le recortan espacios,
+puntuación y puntos suspensivos (`…`/`...`) de los extremos. Debe quedar como
+**subcadena contigua** del chunk plegado con **al menos 12 caracteres no
+blancos** (así no pasan “de” o “2026”, y sí “30 de junio de 2026”). Sin
+similitud difusa: unos puntos suspensivos en medio, un dato cambiado o palabras
+omitidas no coinciden. La cita devuelta es el **tramo del propio chunk** que
+coincide (espacios colapsados, invisibles eliminados), no la grafía del modelo:
+se muestra como evidencia y, tras el plegado, la del modelo podría diferir del
+texto fuente (tildes, mayúsculas, comillas).
 
 **Historial:** se envía al LLM como dato (`historial` dentro del JSON de usuario),
 no como mensajes con rol. La generación recibe siempre la pregunta original y el
@@ -62,7 +71,9 @@ primero los turnos más antiguos y después las fuentes de menor rango; si ni un
 fuente cabe, `503`.
 
 **Prompt** (`services/prompt.py`, español): solo evidencia dada, citar por
-`chunk_id` con quote literal, abstenerse si no basta o si la pregunta no trata de
+`chunk_id` con quote literal, ante preguntas amplias ("qué becas/apoyos hay")
+responder con lo que sí contienen las fuentes y aclarar que puede haber más,
+abstenerse si no basta o si la pregunta no trata de
 servicios, apoyos, programas, convocatorias o trámites de Bienestar
 Universitario/Fomento Socioeconómico (aunque las fuentes tengan palabras
 parecidas o se pudiera responder con conocimiento general; un seguimiento de un
@@ -148,6 +159,19 @@ pregunta ─┬─ D1LexicalRetriever (FTS5 bm25, solo publicadas) ──┐
   `infra/d1/tests/fts_query.py`, test de deriva por AST) + `search_chunks` de
   `infra/d1/queries.sql` (copia literal, test de deriva). Si la consulta FTS
   queda vacía no se consulta D1.
+- **Sinónimos FTS** (`infra/fts_synonyms.py`, `WELFARE_SYNONYMS`): tabla
+  pequeña y direccional para el dominio. `beca(s)` → apoyo(s), auxilio(s),
+  estímulo(s), subsidio(s), beneficio(s); `ayuda(s)` → apoyo(s), auxilio(s);
+  formas de inscribir/postular (inscribo, inscribirme, inscripción, postularme,
+  postulación…) → inscripción(es), inscribirse, postulación(es), postularse;
+  `requisito` ↔ `requisitos`. Las palabras ya específicas del corpus (`apoyo`)
+  no se expanden. Claves plegadas (sin tildes): el tokenizador `unicode61
+  remove_diacritics 2` iguala `estímulo`/`estimulo`; no hay stemming, por eso
+  se listan plurales. Máximo 12 términos extra; son literales fijos entre
+  comillas (`quote_term`), nunca texto del usuario. Como FTS5 no pondera
+  términos, si la expansión añade algo se lanzan **dos** consultas en paralelo
+  (la de referencia y la ampliada) y los aciertos de sinónimos solo
+  **rellenan** detrás de los exactos (`synonyms=None` lo desactiva).
 - **Semántico** (`infra/vectorize.py`, `infra/embeddings.py`): un embedding por
   pregunta (`POST https://ai-gateway.vercel.sh/v1/embeddings`, valida nº de
   vectores, índice, longitud = `EMBEDDING_DIMENSIONS` y floats finitos; sin
@@ -166,7 +190,10 @@ pregunta ─┬─ D1LexicalRetriever (FTS5 bm25, solo publicadas) ──┐
   Protocol) y aplica `is_admissible`. `AnswerService` vuelve a leer cada cita
   (`registry_by_chunk_id`) tras generar → `stale_source` si cambió. D1 es la
   única fuente de verdad: los vectores de versiones no publicadas se descartan.
-  Coste por `/answer`: 1 FTS + 1 carga + 1 lote de catálogo + 1 por cita.
+  Coste por `/answer`: 1 FTS (2 si hay sinónimos) + 1 carga + 1 lote de
+  catálogo + 1 por cita. Con `ANSWER_EVIDENCE_LIMIT=8` el servicio pide
+  `8 × 3 = 24` candidatos (sobremuestreo para descartes del catálogo) y cada
+  canal devuelve `max(24, 50) = 50` (tope `topK` de Vectorize), de sobra para 8.
 - Interfaces async simples y sin FastAPI (`search(question, limit) →
   [RankedChunk]`, `embed(texts) → vectores`, `load(ids)`), envueltas como
   `BaseRetriever`/`Embeddings` de LangChain (ver arriba). `VectorRetriever`
@@ -188,17 +215,19 @@ pregunta original + historial**.
 | Valor | Regla | Coste extra por consulta |
 | --- | --- | --- |
 | `none` | Solo la pregunta actual (comportamiento anterior). | 0 |
-| `concat` (defecto) | Si el historial tiene algún turno `user` **y** la pregunta actual tiene **≤ 10 palabras** (separadas por espacios, `CONCAT_MAX_WORDS`), se recupera con `"<última pregunta del usuario> <pregunta actual>"` (espacios colapsados). La anterior se recorta por el final para no pasar de 500 caracteres; la actual nunca se recorta. En otro caso, la pregunta actual. | 0 |
-| `rewrite` | Con historial no vacío, una cadena LCEL async (`build_rewrite_prompt` → chat model → parser estricto) pide al modelo una pregunta autónoma en español **sin responderla y sin añadir hechos** (del historial solo puede tomar el tema). Salida `{"question": str}` con `response_format` `json_schema` `strict` (`STANDALONE_QUESTION_SCHEMA`), cliente propio con `FOLLOWUP_REWRITE_MAX_TOKENS` (256) y `FOLLOWUP_REWRITE_TIMEOUT_SECONDS` (8 s, también como `asyncio.timeout` en el servicio). JSON inválido, claves duplicadas o extra, texto vacío o > 500 caracteres, error del proveedor o timeout → **fallback a `concat`** con `answer_rewrite_fallback error=<código>`. | 1 llamada al LLM por seguimiento (entrada ≈ prompt + historial, hasta ~4 000 tokens con 6 turnos de 2 000 caracteres; salida ≤ 256, incluido razonamiento) |
+| `concat` (defecto de `Settings`) | Si el historial tiene algún turno `user` **y** la pregunta actual tiene **≤ 10 palabras** (separadas por espacios, `CONCAT_MAX_WORDS`), se recupera con `"<última pregunta del usuario> <pregunta actual>"` (espacios colapsados). La anterior se recorta por el final para no pasar de 500 caracteres; la actual nunca se recorta. En otro caso, la pregunta actual. | 0 |
+| `rewrite` (**desplegado** en `wrangler.jsonc`) | Con historial no vacío, una cadena LCEL async (`build_rewrite_prompt` → chat model → parser estricto) pide al modelo una pregunta autónoma en español **sin responderla y sin añadir hechos** (del historial solo puede tomar el tema). Salida `{"question": str}` con `response_format` `json_schema` `strict` (`STANDALONE_QUESTION_SCHEMA`), cliente propio con `FOLLOWUP_REWRITE_MAX_TOKENS` (256) y `FOLLOWUP_REWRITE_TIMEOUT_SECONDS` (8 s, también como `asyncio.timeout` en el servicio). JSON inválido, claves duplicadas o extra, texto vacío o > 500 caracteres, error del proveedor o timeout → **fallback a `concat`** con `answer_rewrite_fallback error=<código>`. | 1 llamada al LLM por seguimiento (entrada ≈ prompt + historial, hasta ~4 000 tokens con 6 turnos de 2 000 caracteres; salida ≤ 256, incluido razonamiento) |
 
 Por qué la regla de `concat`: es explícita, gratuita e independiente del idioma.
 Limitar a preguntas cortas evita contaminar la recuperación cuando el
 estudiante cambia de tema con una pregunta completa. **Limitación honesta:**
 los 5 ítems `follow_up` del dataset tienen ≤ 10 palabras y empiezan por "¿Y…",
 así que el dataset no distingue esta regla de "concatenar siempre"; no hay ítems
-de cambio de tema con historial. `rewrite` queda para la evaluación: su coste
-(una llamada más y su latencia por cada pregunta con historial) no se justifica
-como defecto sin datos. Los tokens del rewrite **no** se suman a
+de cambio de tema con historial. En producción `concat` falló en seguimientos
+reales (p. ej. "¿cómo me inscribo?" tras preguntar por un programa concreto),
+así que `wrangler.jsonc` despliega `rewrite` (mismo `GENERATION_MODEL`, cliente
+propio; ante cualquier fallo vuelve a `concat`). `Settings` mantiene `concat`
+como defecto sin coste para desarrollo y tests. Los tokens del rewrite **no** se suman a
 `AnswerResult.usage` (que sigue siendo el de la generación); se registran
 aparte en `rewrite_tokens`.
 
@@ -237,8 +266,9 @@ lo que el umbral no ve (fuentes léxicamente parecidas a una pregunta ajena).
 `answer_metrics` añade, sin contenido: `followup_strategy` (configurada),
 `followup_used` (`none|concat|rewrite`: qué regla produjo el texto
 recuperado), `followup_fallback` (`true` si el rewrite falló),
-`rewrite_ms`, `rewrite_tokens`, `threshold` (`off|pass|below|unscored`) y
-`below_threshold`. Con `RAG_LOG_LEVEL=INFO`.
+`rewrite_ms`, `rewrite_tokens`, `threshold` (`off|pass|below|unscored`),
+`below_threshold` y `dropped_citations` (citas descartadas por inválidas o
+repetidas). Con `RAG_LOG_LEVEL=INFO`.
 
 1. **Seguimientos:** arrancar el RAG con `FOLLOWUP_STRATEGY=none`, correr
    `answer --label fu-none --category follow_up`; repetir con `concat` y
@@ -277,10 +307,10 @@ campo, nunca con valores.
 | `GENERATION_MODEL` | var | `openai/gpt-6-luna` |
 | `GENERATION_REASONING_EFFORT` | var | `low` (`none…max`) |
 | `GENERATION_MAX_TOKENS` | var | `2048` (incluye tokens de razonamiento) |
-| `GENERATION_MAX_INPUT_CHARS` | var | `20000` (sistema + usuario; única fuente para servicio y gateway) |
+| `GENERATION_MAX_INPUT_CHARS` | var | `32000` (sistema + usuario; única fuente para servicio y gateway). Prompt de sistema ≈ 2 600 + 8 fuentes × ≈ 2 200 (chunks ≤ 1 800 caracteres en JSON con metadatos) ≈ 20 000; el resto queda para historial, que se descarta primero. Peor caso ≈ 8–9 k tokens de entrada |
 | `AI_GATEWAY_URL` | var | `https://ai-gateway.vercel.sh/v1/chat/completions` |
 | `AI_GATEWAY_TIMEOUT_SECONDS` | var | `20` |
-| `ANSWER_EVIDENCE_LIMIT` | var | `5` |
+| `ANSWER_EVIDENCE_LIMIT` | var | `8` (1..20) |
 | `RAG_LOG_LEVEL` | var | `WARNING` |
 | `RETRIEVAL_MODE` | var | `hybrid` (`lexical`, `semantic`) |
 | `RETRIEVAL_RRF_K` | var | `60` |
@@ -288,7 +318,7 @@ campo, nunca con valores.
 | `EMBEDDING_DIMENSIONS` | var | `1536` (1..1536; debe coincidir con el índice) |
 | `EMBEDDING_URL` | var | `https://ai-gateway.vercel.sh/v1/embeddings` |
 | `EMBEDDING_TIMEOUT_SECONDS` | var | `10` |
-| `FOLLOWUP_STRATEGY` | var | `concat` (`none`, `rewrite`) |
+| `FOLLOWUP_STRATEGY` | var | `concat` (`none`, `rewrite`); `wrangler.jsonc`: `rewrite` |
 | `FOLLOWUP_REWRITE_MAX_TOKENS` | var | `256` (16..2048; solo `rewrite`) |
 | `FOLLOWUP_REWRITE_TIMEOUT_SECONDS` | var | `8` (solo `rewrite`) |
 | `MIN_RELEVANCE` | var | vacío = desactivado (`0 < x ≤ 1`, coseno) |
@@ -296,7 +326,7 @@ campo, nunca con valores.
 | `VECTORIZE` | binding Vectorize | ausente ⇒ ver `RETRIEVAL_MODE` |
 
 `wrangler.jsonc` declara `workers_dev: false`, `preview_urls: false`, las vars
-de modelo/modo, `d1_databases` (`DB`, `database_name: unitropico`,
+de modelo/modo, recuperación (`ANSWER_EVIDENCE_LIMIT=8`, `GENERATION_MAX_INPUT_CHARS=32000`, `FOLLOWUP_STRATEGY=rewrite`), `d1_databases` (`DB`, `database_name: unitropico`,
 `database_id` **placeholder de ceros** a sustituir al crear la base,
 `migrations_dir: ../../infra/d1/migrations`) y `vectorize` (`VECTORIZE`,
 `index_name: unitropico-chunks-1536`, índice aún no creado). La misma clave
@@ -321,7 +351,7 @@ Métricas para la evaluación: cada `/answer` configurado emite en **INFO**
 (`RAG_LOG_LEVEL=INFO`):
 
 ```
-answer_metrics status=answered reason=- sources=3 retrieval_ms=41.0 generation_ms=1830.2 validation_ms=4.1 prompt_tokens=2510 completion_tokens=212 total_tokens=2722 followup_strategy=concat followup_used=concat followup_fallback=false rewrite_ms=- rewrite_tokens=- threshold=off below_threshold=false
+answer_metrics status=answered reason=- sources=3 retrieval_ms=41.0 generation_ms=1830.2 validation_ms=4.1 prompt_tokens=2510 completion_tokens=212 total_tokens=2722 followup_strategy=concat followup_used=concat followup_fallback=false rewrite_ms=- rewrite_tokens=- threshold=off below_threshold=false dropped_citations=0
 ```
 
 `retrieval_ms` excluye el rewrite (`rewrite_ms`); `generation_ms` cubre prompt + modelo; `validation_ms`, parser + citas +
@@ -352,11 +382,12 @@ CPython, donde `AnswerResult.usage` está disponible.
 - `services/`: `RetrievalService`, `AnswerService` (depende del Protocol
   `EvidenceRetrieval`; cadena LCEL), `fusion.py` (`HybridRetriever`, RRF con
   `FusedCandidate`), `retriever.py` (`ChunkRetriever`), `chat_model.py`
-  (`GeneratorChatModel`), `prompt.py` (`ChatPromptTemplate`).
+  (`GeneratorChatModel`), `prompt.py` (`ChatPromptTemplate`), `quotes.py`
+  (`match_quote`).
 - `infra/`: `gateway.py` (`GatewayClient`), `embeddings.py`
   (`GatewayEmbedder`), `d1.py` (puerto `D1Database`, `D1LexicalRetriever`,
   `D1EvidenceCatalog`), `vectorize.py` (puerto `VectorIndex`, `VectorizeIndex`,
-  `VectorRetriever`), `fts_query.py`, `workers_fetch.py` (adaptador del fetch de
+  `VectorRetriever`), `fts_query.py`, `fts_synonyms.py`, `workers_fetch.py` (adaptador del fetch de
   Pyodide; convierte excepciones JS en `OSError`/`ValueError`).
 - `api/`: DTO Pydantic estrictos separados del dominio (`answer.py`,
   `retrieval.py`, `routes.py`).
@@ -450,6 +481,9 @@ módulos, 21 817 KiB sin comprimir (64 MiB de límite), 5 229 KiB gzip. `python_
 - Efecto real de `FOLLOWUP_STRATEGY` (`concat` vs `rewrite`) y valor de
   `MIN_RELEVANCE`: sin corpus indexado ni gateway real no hay mediciones; la
   regla de `concat` (≤ 10 palabras) no está calibrada y el umbral está apagado.
+- Efecto en el corpus real de `ANSWER_EVIDENCE_LIMIT=8`, la expansión de
+  sinónimos FTS, la tolerancia parcial de citas y el plegado de quotes: solo
+  hay tests offline; falta medirlo con el harness.
 
 - `WorkersFetch` sobre `workers.fetch` real hacia el gateway (en workerd solo
   se verificó `self.env`, D1 local y las rutas sin generación).

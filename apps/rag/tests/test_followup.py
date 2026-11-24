@@ -8,6 +8,7 @@ fake fetch transport.
 import asyncio
 import json
 import logging
+from pathlib import Path
 
 import pytest
 from d1_support import seeded
@@ -257,7 +258,8 @@ def test_metrics_record_strategy_without_content(caplog):
     assert "retrieval_ms=1000.0 " in line
     assert line.endswith(
         "followup_strategy=rewrite followup_used=rewrite followup_fallback=false "
-        "rewrite_ms=1000.0 rewrite_tokens=5 threshold=off below_threshold=false"
+        "rewrite_ms=1000.0 rewrite_tokens=5 threshold=off below_threshold=false "
+        "dropped_citations=0"
     )
     for fragment in ("requisitos", "alimentación", "promedio", "Texto"):
         assert fragment not in caplog.text
@@ -463,3 +465,59 @@ def test_composition_min_relevance_uses_vectorize_cosine(min_relevance, expected
         assert transport.urls() == ["embeddings"]
     else:
         assert body["status"] == "answered"
+
+
+# --- deployed configuration (wrangler.jsonc vars) ---------------------------------
+
+
+def wrangler_vars() -> dict:
+    """Parse the ``vars`` of wrangler.jsonc (full-line ``//`` comments only)."""
+    path = Path(__file__).resolve().parents[1] / "wrangler.jsonc"
+    lines = path.read_text("utf-8").splitlines()
+    return json.loads(
+        "\n".join(line for line in lines if not line.lstrip().startswith("//"))
+    )["vars"]
+
+
+def test_wrangler_vars_select_rewrite_and_eight_sources():
+    """Deployed vars: rewrite follow-ups, 8 sources, a budget that fits them."""
+    settings = Settings.from_mapping(wrangler_vars())
+    assert settings.followup_strategy == "rewrite"
+    assert settings.generation_model == "openai/gpt-6-luna"
+    assert settings.evidence_limit == 8
+    # System prompt + 8 sources of 1800-char chunks (JSON + metadata) must fit.
+    assert settings.max_input_chars - len(SYSTEM_PROMPT) >= 8 * 2300
+
+
+def test_composition_with_wrangler_vars_rewrites_with_generation_model():
+    """Rewrite uses GENERATION_MODEL; retrieval asks 8 x 3 candidates, topK 50."""
+    transport = RewriteTransport({"question": "¿Hasta cuándo es la inscripción?"})
+    vectorize = Vectorize(["chunk-beca"])
+    settings = Settings.from_mapping(wrangler_vars()).model_copy(
+        update={"ai_gateway_api_key": SecretStr("fake-key")}
+    )
+    app = build_app(settings, fetch=transport, bindings=Bindings(seeded(), vectorize))
+    payload = {
+        "question": "¿Y hasta cuándo?",
+        "history": [{"role": "user", "content": "¿Cómo pido la beca?"}],
+    }
+    status, body = request(app, payload, path="/answer")
+    assert status == 200 and body["status"] == "answered"
+    assert transport.urls() == ["completions", "embeddings", "completions"]
+    assert transport.calls[0][1]["model"] == "openai/gpt-6-luna"
+    assert transport.calls[1][1]["input"] == ["¿Hasta cuándo es la inscripción?"]
+    assert vectorize.calls[0][1]["topK"] == 50
+
+
+def test_composition_rewrite_failure_falls_back_to_concat():
+    """An unusable rewrite (blank question) retrieves with the concat text."""
+    transport = RewriteTransport({"question": "  "})
+    app = compose(transport, Vectorize(["chunk-beca"]), followup_strategy="rewrite")
+    payload = {
+        "question": "¿Y hasta cuándo?",
+        "history": [{"role": "user", "content": "¿Cómo pido la beca?"}],
+    }
+    status, body = request(app, payload, path="/answer")
+    assert status == 200 and body["status"] == "answered"
+    assert transport.urls() == ["completions", "embeddings", "completions"]
+    assert transport.calls[1][1]["input"] == ["¿Cómo pido la beca? ¿Y hasta cuándo?"]

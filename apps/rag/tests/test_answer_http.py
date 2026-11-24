@@ -90,7 +90,9 @@ def test_answered():
             "referral": None,
         },
     )
-    assert retriever.calls == [("¿Qué apoyos hay?", 15)]
+    assert retriever.calls == [
+        ("¿Qué apoyos hay?", 24)
+    ]  # ANSWER_EVIDENCE_LIMIT 8 x oversampling 3
     body = json.loads(fetch.calls[0][1]["body"])
     assert body["model"] == "openai/gpt-6-luna"
     assert body["reasoning_effort"] == "low" and body["max_tokens"] == 2048
@@ -111,7 +113,7 @@ def test_history_reaches_model_but_not_retrieval():
     ]
     status, _ = post(app, {"question": "¿Y el plazo?", "history": history})
     assert status == 200
-    assert retriever.calls == [("¿Y el plazo?", 15)]
+    assert retriever.calls == [("¿Y el plazo?", 24)]
     user = json.loads(json.loads(fetch.calls[0][1]["body"])["messages"][1]["content"])
     assert user["historial"] == history
 

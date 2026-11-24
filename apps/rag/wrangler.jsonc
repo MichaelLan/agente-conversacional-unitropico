@@ -11,9 +11,13 @@
     "EMBEDDING_MODEL": "openai/text-embedding-3-small",
     "EMBEDDING_DIMENSIONS": 1536,
     "RETRIEVAL_MODE": "hybrid",
+    // Sources sent to the model; the input budget must fit them (README).
+    "ANSWER_EVIDENCE_LIMIT": 8,
+    "GENERATION_MAX_INPUT_CHARS": 32000,
     // Retrieval question for follow-ups: none | concat | rewrite (rewrite adds
-    // one LLM call per follow-up; see README "Conversación y alcance").
-    "FOLLOWUP_STRATEGY": "concat",
+    // one LLM call per follow-up with the same GENERATION_MODEL and falls back
+    // to concat on any failure; see README "Conversación y alcance").
+    "FOLLOWUP_STRATEGY": "rewrite",
     "FOLLOWUP_REWRITE_MAX_TOKENS": 256,
     "FOLLOWUP_REWRITE_TIMEOUT_SECONDS": 8,
     // Minimum Vectorize cosine score (0..1]; empty = disabled (not calibrated).

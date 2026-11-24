@@ -51,8 +51,10 @@ class Settings(BaseModel):
     gateway_timeout_seconds: float = Field(default=20, gt=0, le=60)
     generation_max_tokens: int = Field(default=2048, ge=1, le=32768)
     reasoning_effort: ReasoningEffort = "low"
-    max_input_chars: int = Field(default=20000, ge=1000, le=200000)
-    evidence_limit: int = Field(default=5, ge=1, le=20)
+    # Sized for 8 sources: system prompt (~2.6k) + 8 x ~2.2k (1800-char chunks
+    # as JSON with metadata) + room for history (oldest turns drop first).
+    max_input_chars: int = Field(default=32000, ge=1000, le=200000)
+    evidence_limit: int = Field(default=8, ge=1, le=20)
     retrieval_mode: RetrievalMode = "hybrid"
     rrf_k: int = Field(default=60, ge=0, le=1000)
     embedding_model: str = Field(default="openai/text-embedding-3-small", min_length=1)

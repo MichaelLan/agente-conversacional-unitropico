@@ -557,7 +557,7 @@ def test_metrics_log_has_phases_and_tokens_without_content(caplog):
         "generation_ms=1000.0 validation_ms=1000.0 prompt_tokens=120 "
         "completion_tokens=30 total_tokens=150 followup_strategy=none "
         "followup_used=none followup_fallback=false rewrite_ms=- rewrite_tokens=- "
-        "threshold=off below_threshold=false"
+        "threshold=off below_threshold=false dropped_citations=0"
     )
     assert "SECRET" not in caplog.text and "prueba" not in caplog.text
 
@@ -578,7 +578,7 @@ def test_metrics_log_for_abstention_before_generation(caplog):
         "retrieval_ms=500.0 generation_ms=- validation_ms=- prompt_tokens=- "
         "completion_tokens=- total_tokens=- followup_strategy=none "
         "followup_used=none followup_fallback=false rewrite_ms=- rewrite_tokens=- "
-        "threshold=off below_threshold=false"
+        "threshold=off below_threshold=false dropped_citations=0"
     ) in caplog.text
 
 

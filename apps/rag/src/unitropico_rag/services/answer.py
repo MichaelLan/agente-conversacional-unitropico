@@ -41,11 +41,8 @@ from unitropico_rag.services.prompt import (
     build_answer_prompt,
     build_rewrite_prompt,
 )
+from unitropico_rag.services.quotes import match_quote
 from unitropico_rag.services.retrieval import AsyncEvidenceCatalog
-
-# A quote must carry at least this many non-whitespace characters, so that
-# trivially short strings ("de", "2026") cannot pass as literal evidence.
-MIN_QUOTE_CHARS = 12
 
 # concat rule: a question of at most this many whitespace-separated words is
 # treated as a follow-up and prefixed with the last user question of history.
@@ -75,13 +72,6 @@ def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
 def normalize_whitespace(text: str) -> str:
     """Collapse every run of Unicode whitespace to one space and trim the ends."""
     return " ".join(text.split())
-
-
-def quote_matches(quote: str, text: str) -> bool:
-    """Accept a quote that is long enough and literal modulo whitespace runs."""
-    normalized = normalize_whitespace(quote)
-    visible = len(normalized.replace(" ", ""))
-    return visible >= MIN_QUOTE_CHARS and normalized in normalize_whitespace(text)
 
 
 def _pages(item: Evidence) -> str:
@@ -140,6 +130,7 @@ class _Trace:
     rewrite_ended: float | None = None
     rewrite_usage: TokenUsage | None = None
     threshold: str = "off"
+    dropped_citations: int = 0
 
 
 def _ms(start: float | None, end: float | None) -> str:
@@ -200,7 +191,8 @@ class AnswerService:
     resistance. No retries occur. Logs never include questions, history,
     evidence text or provider payloads; ``answer_metrics`` (INFO) records only
     status, reason, phase latencies, source count, token counts, the follow-up
-    strategy/fallback and the relevance-gate outcome.
+    strategy/fallback, the relevance-gate outcome and the number of dropped
+    (invalid or duplicate) citations.
 
     Retrieval question (``followup_strategy``): ``none`` uses the current
     question; ``concat`` applies ``concat_question``; ``rewrite`` asks
@@ -444,18 +436,31 @@ class AnswerService:
         return {**state, "candidate": candidate, "usage": usage}
 
     async def _averify(self, state: dict[str, Any]) -> dict[str, Any]:
-        """Require known, unique chunk ids and literal quotes from the sources."""
+        """Keep citations with a known, unique chunk id and a literal quote.
+
+        Invalid citations (unknown chunk id, repeated chunk, or a quote that
+        ``match_quote`` rejects) are dropped and counted; the answer survives
+        backed by the remaining ones. Abstain with ``invalid_citation`` only
+        when no valid citation remains. Each kept quote is the matching span
+        of the chunk text, never the model's spelling.
+        """
         by_id = {item.chunk_id: item for item in state["sources"]}
         cited: list[tuple[Evidence, str]] = []
+        dropped = 0
         for reference in state["candidate"].citations:
             chunk = by_id.get(reference.chunk_id)
-            if (
-                chunk is None
-                or any(item is chunk for item, _ in cited)
-                or not quote_matches(reference.quote, chunk.text)
-            ):
-                raise _Abstention("invalid_citation", state["usage"])
-            cited.append((chunk, normalize_whitespace(reference.quote)))
+            quote = None
+            if chunk is not None and not any(item is chunk for item, _ in cited):
+                quote = match_quote(reference.quote, chunk.text)
+            if quote is None:
+                dropped += 1
+                continue
+            cited.append((chunk, quote))  # type: ignore[arg-type]
+        trace = state.get("trace")
+        if isinstance(trace, _Trace):
+            trace.dropped_citations = dropped
+        if not cited:
+            raise _Abstention("invalid_citation", state["usage"])
         return {**state, "cited": tuple(cited)}
 
     async def _arevalidate(self, state: dict[str, Any]) -> AnswerResult:
@@ -561,7 +566,7 @@ class AnswerService:
             "generation_ms=%s validation_ms=%s prompt_tokens=%s "
             "completion_tokens=%s total_tokens=%s followup_strategy=%s "
             "followup_used=%s followup_fallback=%s rewrite_ms=%s rewrite_tokens=%s "
-            "threshold=%s below_threshold=%s",
+            "threshold=%s below_threshold=%s dropped_citations=%d",
             result.status,
             result.reason or "-",
             trace.sources,
@@ -583,4 +588,5 @@ class AnswerService:
             _count(trace.rewrite_usage.total_tokens if trace.rewrite_usage else None),
             trace.threshold,
             str(trace.threshold == "below").lower(),
+            trace.dropped_citations,
         )

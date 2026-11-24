@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 from dataclasses import replace
 from datetime import date
 from hashlib import sha256
@@ -17,8 +18,9 @@ from unitropico_rag.domain.answer import (
 )
 from unitropico_rag.domain.evidence import RetrievalResult
 from unitropico_rag.domain.generation import GeneratedText, GenerationError, TokenUsage
-from unitropico_rag.services.answer import AnswerService, quote_matches
+from unitropico_rag.services.answer import AnswerService
 from unitropico_rag.services.prompt import DEFAULT_REFERRAL, SYSTEM_PROMPT
+from unitropico_rag.services.quotes import match_quote, quote_matches
 from unitropico_rag.services.retrieval import RetrievalService
 
 QUOTE = "Texto de prueba sobre apoyos"
@@ -137,6 +139,9 @@ def test_system_prompt_rules():
         "no elijas",
         "vigencia",
         "texto plano",
+        "Si la pregunta es amplia",
+        "si las fuentes no bastan para responder, abstente.",
+        "No uses conocimiento externo.",
     ):
         assert fragment in SYSTEM_PROMPT
 
@@ -150,21 +155,79 @@ def test_citation_uses_current_catalog_title():
     assert result.citations[0].version_label is None
 
 
+LONG_TEXT = (
+    "Requisitos del apoyo socioeconómico de alimentación:\n"
+    "| Requisito | Soporte |\n"
+    "| **Estar matriculado** en el periodo | Certificado – vigente |\n"
+    "El estudiante debe \u201cinscribirse\u201d en la convoca\u00adtoria "
+    "dentro del plazo de 25 días hábiles. Año 2026."
+)
+
+
 @pytest.mark.parametrize(
     "quote,ok",
     [
         (QUOTE, True),
         ("  Texto   de\nprueba\tsobre apoyos ", True),
         ("sobre apoyos á", True),
+        # Unicode normalization (decomposed accent vs composed source).
+        ("Texto de prueba sobre apoyos a\u0301", True),
+        ("texto DE PRUEBA sobre apoyos", True),
         ("Texto de", False),
         ("prueba apoyos", False),
-        ("Texto de prueba sobre apoyos á", False),
         ("Texto inventado completamente", False),
+        # Edge punctuation/ellipsis do not count toward the minimum.
+        ("...apoyos á.", False),
     ],
 )
 def test_quote_normalization_and_minimum(quote, ok):
-    """Compare modulo whitespace runs and require 12 visible characters."""
+    """Compare modulo folding and require 12 visible characters."""
     assert quote_matches(quote, CANDIDATE.text) is ok
+
+
+@pytest.mark.parametrize(
+    "quote,span",
+    [
+        # Case and accents (OCR loses accents; models restore them).
+        ("REQUISITOS DEL APOYO SOCIOECONOMICO", "Requisitos del apoyo socioeconómico"),
+        # Curly vs straight quotes, soft hyphen inside the source word.
+        (
+            'debe "inscribirse" en la convocatoria',
+            "debe \u201cinscribirse\u201d en la convocatoria",
+        ),
+        # Dash variants and Markdown pipes/asterisks.
+        (
+            "Estar matriculado en el periodo Certificado - vigente",
+            "Estar matriculado** en el periodo | Certificado – vigente",
+        ),
+        # Leading/trailing ellipsis and punctuation are trimmed.
+        (
+            "…dentro del plazo de 25 días hábiles...",
+            "dentro del plazo de 25 días hábiles",
+        ),
+        ('"plazo de 25 dias habiles."', "plazo de 25 días hábiles"),
+        # Line breaks in the source collapse to spaces.
+        ("alimentación: Requisito Soporte", "alimentación: | Requisito | Soporte"),
+    ],
+)
+def test_match_quote_returns_source_span(quote, span):
+    """Lenient folding, but the returned quote is the chunk's own text."""
+    assert match_quote(quote, LONG_TEXT) == span
+
+
+@pytest.mark.parametrize(
+    "quote",
+    [
+        "dentro del plazo ... días hábiles",  # middle ellipsis: not contiguous
+        "dentro del plazo de 30 días hábiles",  # changed fact
+        "Requisitos del apoyo de alimentación",  # skipped words
+        "el plazo de 25",  # 11 visible characters
+        "…!!..  ",
+    ],
+)
+def test_match_quote_rejects_non_literal(quote):
+    """No fuzzy matching: the folded quote must be a contiguous substring."""
+    assert match_quote(quote, LONG_TEXT) is None
 
 
 def test_quote_is_returned_normalized():
@@ -175,6 +238,16 @@ def test_quote_is_returned_normalized():
     }
     result, *_ = run(payload)
     assert result.citations[0].quote == "Texto de prueba"
+
+
+def test_quote_is_returned_with_source_spelling():
+    """A lenient match returns the chunk span, not the model's spelling."""
+    payload = {
+        **VALID,
+        "citations": [{"chunk_id": "c1", "quote": "“TEXTO DE PRUEBA SOBRE APOYOS”"}],
+    }
+    result, *_ = run(payload)
+    assert result.citations[0].quote == QUOTE
 
 
 def assert_abstained(result, reason, attempted=True):
@@ -235,13 +308,52 @@ def test_invalid_output(payload):
         [{"chunk_id": "c1", "quote": "inventada por el modelo"}],
         [{"chunk_id": "c1", "quote": " "}],
         [{"chunk_id": "c1", "quote": "apoyos"}],
-        VALID["citations"] * 2,
+        [
+            {"chunk_id": "other", "quote": QUOTE},
+            {"chunk_id": "c1", "quote": "inventada por el modelo"},
+        ],
     ],
 )
 def test_invalid_citation(citations):
-    """Unknown chunk, non-literal or too-short quote, or duplicate chunk."""
+    """Abstain only when no citation survives (unknown, non-literal, short)."""
     result, *_ = run({**VALID, "citations": citations})
     assert_abstained(result, "invalid_citation")
+
+
+SECOND = "Otro fragmento con requisitos de inscripción"
+
+
+@pytest.mark.parametrize(
+    "citations,kept,dropped",
+    [
+        # Duplicate chunk: the repeat is dropped, the first kept.
+        (VALID["citations"] * 2, ["c1"], 1),
+        # Unknown chunk and invented quote dropped; valid ones kept in order.
+        (
+            [
+                {"chunk_id": "zz", "quote": QUOTE},
+                {"chunk_id": "c2", "quote": SECOND},
+                {"chunk_id": "c1", "quote": "inventada por el modelo"},
+                {"chunk_id": "c1", "quote": QUOTE},
+            ],
+            ["c2", "c1"],
+            2,
+        ),
+    ],
+)
+def test_partial_citations_keep_answer(citations, kept, dropped, caplog):
+    """Invalid citations are dropped; the answer stands on the remaining ones."""
+    second = chunk("c2", SECOND)
+    catalog = Catalog(entries={"c1": ENTRY, "c2": second[1]})
+    retriever = Retriever((CANDIDATE, second[0]))
+    generator = Generator({**VALID, "citations": citations})
+    answer = service(RetrievalService(retriever, catalog), generator, catalog)
+    with caplog.at_level(logging.INFO, logger="unitropico_rag"):
+        result = asyncio.run(answer.query(AnswerQuery("pregunta")))
+    assert result.status == "answered" and result.answer == "Respuesta"
+    assert [citation.chunk_id for citation in result.citations] == kept
+    assert f"dropped_citations={dropped}" in caplog.text
+    assert "inventada" not in caplog.text and "prueba" not in caplog.text
 
 
 CHANGES = [
