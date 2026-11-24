@@ -31,6 +31,9 @@ Total: 216 páginas, 436 chunks (idénticos al informe de la caché), 436 vector
 
 Coste observado: la API no expone uso del gateway; consultar el panel de Vercel AI Gateway. Estimado < 0,01 USD (embeddings `openai/text-embedding-3-small` de 436 chunks en la carga inicial + chunks re-embebidos en el reproceso). Sin coste OCR. No se hizo ninguna llamada al LLM generador ni a `/api/chat`.
 
+## Ajustes del RAG (2026-11-21)
+Las 7 versiones están **publicadas** (2026-11-21, desde `/admin/`). Redesplegados `unitropico-rag` (versión `4ba4db22-945a-4bde-b072-d58e0a1005df`) y `unitropico-web` (`3ff75947-8a76-4445-8d2b-56a29df8c237`): citas inválidas descartadas individualmente (abstención `invalid_citation` solo si no queda ninguna), comparación de citas tolerante a tildes/comillas/guiones/Markdown, `ANSWER_EVIDENCE_LIMIT=8`, `GENERATION_MAX_INPUT_CHARS=32000`, sinónimos FTS (beca→apoyo/ayuda, inscripción/postulación), `FOLLOWUP_STRATEGY=rewrite`, regla 5 del prompt para preguntas amplias, y la web muestra un mensaje distinto según el motivo de abstención. Prueba en producción: becas generales, seguimiento "como me inscribo?" con historial, requisitos y Bien-Estar Contigo responden con citas; fuera de alcance se abstiene. Coste de las ~15 consultas < 0,02 USD.
+
 ## Smoke tests (2026-11-20, todos OK)
 `/` y `/admin/` 200 con CSP; `/api/health` 200; `POST /api/chat` 503 `unavailable` (esperado: sin clave del gateway, no llama a ningún LLM); `/api/admin/documents` 401 sin token y 200 `{"documents":[]}` con token; `/api/retrieval/query` 404.
 
